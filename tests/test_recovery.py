@@ -104,6 +104,12 @@ def test_wakeup_failure_is_retryable_and_running_task_can_be_cancelled(
     assert store._read_record("task-recovery").status == "CANCELLED"
     assert store._active_for_role("explorer") is None
 
+    repeated = store.assign_task(
+        "wf-recovery", "explorer", "task-recovery-2", "Inspect the follow-up",
+        ["report"], ["follow-up remains bounded"], [], [],
+    )
+    assert repeated["warnings"] == []
+
 
 def test_repeated_blocked_report_retries_pending_callback(project_root: Path, monkeypatch) -> None:
     init_project(project_root, assume_yes=True)

@@ -3,6 +3,9 @@
 Supervisor 只選擇一個 execution profile。這個 profile 同時決定必要角色，
 以及是否啟用高影響契約 Gate：
 
+新的 preflight metadata 只使用正式的 `--execution-profile` 參數。已移除的
+`--profile` 會回傳改名提示，不會重新寫成 legacy metadata 欄位。
+
 | 深度 | 預設流程 | 適用情況 |
 | --- | --- | --- |
 | `DIRECT` | Supervisor | 小型、明確、可逆或唯讀任務 |

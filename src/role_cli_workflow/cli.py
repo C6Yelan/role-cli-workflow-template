@@ -201,7 +201,11 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = parser().parse_args(argv)
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if any(item == "--profile" or item.startswith("--profile=") for item in arguments):
+        print("ERROR: --profile was renamed to --execution-profile", file=sys.stderr)
+        return 2
+    args = parser().parse_args(arguments)
     try:
         if args.command == "init":
             warnings = init_project(args.project_root, assume_yes=args.yes)
@@ -235,7 +239,6 @@ def main(argv: list[str] | None = None) -> int:
                 payload = store.execute(args.transaction_id)
             else:
                 payload = store.show(args.transaction_id)
-            import json
             print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
             return 0
         if args.command == "workflow":

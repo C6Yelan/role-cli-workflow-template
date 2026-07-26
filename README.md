@@ -65,7 +65,7 @@ The default role branches are `workflow/<role>`. To override one, add (for examp
 - `open`: sync, require a doctor result without FAIL, then create the fixed six-window tmux server.
 - `verify`: verify the live fixed panes without reading TUI content or running a product task.
 - `attach`: attach directly to the Supervisor window.
-- `status`: display runtime state plus latest Worker execution and callback metadata without parsing panes.
+- `status`: display runtime/task metadata and a read-only Git summary for every fixed worktree without parsing panes. `DIRTY` is informational; status never cleans or changes a worktree.
 - `stop`: stop only the fixed tmux server and remove an exact stale socket. Worktrees, tasks, results, and reports remain.
 
 After `attach`, use the mouse wheel for history, click the bottom window labels to inspect roles, `Ctrl+b [` for copy mode, `q` or `Esc` to leave copy mode, and `Ctrl+b d` to detach. Avoid typing in automated Worker composers while a task is active.

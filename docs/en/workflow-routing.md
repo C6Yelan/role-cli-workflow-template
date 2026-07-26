@@ -3,6 +3,10 @@
 Supervisor selects one execution profile. The profile determines both the
 necessary roles and whether high-impact contract gates apply:
 
+New preflight metadata uses the official `--execution-profile` option. The
+removed `--profile` spelling returns a rename error and is not written as a
+legacy metadata field.
+
 | Depth | Default flow | Use when |
 | --- | --- | --- |
 | `DIRECT` | Supervisor | The task is small, explicit, reversible, or read-only |

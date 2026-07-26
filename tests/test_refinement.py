@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from role_cli_workflow.bootstrap import init_project
-from role_cli_workflow.cli import parser
+from role_cli_workflow.cli import main, parser
 from role_cli_workflow.config import load_project
 from role_cli_workflow.refinement import (
     RefinementError,
@@ -138,6 +138,45 @@ def test_refinement_cli_defaults_verify_and_exposes_authority_assembly() -> None
         "--classification", "advisory",
     ])
     assert resolve_args.workflow_command == "resolve-semantic-repair"
+
+
+def test_preflight_cli_accepts_execution_profile_and_writes_only_current_field(
+    project_root: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    init_project(project_root, assume_yes=True)
+    result = main([
+        "workflow", "preflight", str(project_root), "wf-cli",
+        "--execution-profile", "REVIEW",
+        "--target-role", "implementer",
+        "--base-sha", "a" * 40,
+        "--target-sha", "b" * 40,
+        "--working-tree-status", "clean",
+        "--git-handoff", "branch and SHA",
+    ])
+    assert result == 0
+    assert json.loads(capsys.readouterr().out)["execution_profile"] == "REVIEW"
+    payload = json.loads(
+        (
+            load_project(project_root).workflow_root
+            / "tasks/wf-cli/data/preflight.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert payload["execution_profile"] == "REVIEW"
+    assert "profile" not in payload
+    assert "task_profile" not in payload
+
+
+@pytest.mark.parametrize("argument", ["--profile", "--profile=FULL"])
+def test_preflight_cli_rejects_renamed_profile_with_clear_error(
+    argument: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    result = main([
+        "workflow", "preflight", "/tmp/project", "wf-1", argument, "FULL",
+    ])
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "--profile was renamed to --execution-profile" in captured.err
+    assert "--profile" not in parser().format_help()
 
 
 def test_preflight_uses_one_execution_profile_and_matching_order(project_root: Path) -> None:

@@ -324,6 +324,21 @@ class TaskStore:
             except (StateError, ValidationError):
                 continue
 
+    def _legacy_authority_warning_was_reported(self, workflow_id: str) -> bool:
+        for path in sorted(TASKS_DIR.glob("*/contract.json")):
+            try:
+                contract = self._read_json(path, "task contract")
+            except StateError:
+                continue
+            authority = contract.get("effective_authority")
+            if (
+                contract.get("workflow_id") == workflow_id
+                and isinstance(authority, dict)
+                and authority.get("status") == "LEGACY_AUTHORITY_WARNING"
+            ):
+                return True
+        return False
+
     def _decisions(self) -> Iterator[dict[str, Any]]:
         for path in sorted(DECISIONS_DIR.glob("*.json")):
             try:
@@ -601,7 +616,7 @@ class TaskStore:
                     "label": "Effective approved authority",
                     "allowed_sections": ["summary", "effective_plan", "effective_contract", "effective_decisions"],
                 })
-        else:
+        elif not self._legacy_authority_warning_was_reported(str(contract["workflow_id"])):
             warnings.append("LEGACY_AUTHORITY_WARNING")
         contract_bytes = len(canonical_json(contract).encode("utf-8"))
         if contract_bytes > MAX_PAYLOAD_BYTES:

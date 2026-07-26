@@ -52,7 +52,8 @@ role-cli-workflow sync ~/projects/NewProject
 role-cli-workflow stop ~/projects/NewProject
 ```
 
-- `status` 讀取持久化 runtime state，不解析終端畫面。
+- `status` 讀取持久化 runtime state，並顯示每個固定 worktree 的 branch、
+  HEAD 與 clean/dirty 變更數。Dirty 只表示觀測結果，不會觸發清理或修改。
 - `verify` 檢查固定 panes，不會派發產品任務。
 - `sync` 重新部署模板管理的檔案，並保留任務歷史。
 - `stop` 只停止 tmux；worktrees、任務紀錄與報告都會保留。

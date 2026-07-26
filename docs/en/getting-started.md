@@ -53,7 +53,9 @@ role-cli-workflow sync ~/projects/NewProject
 role-cli-workflow stop ~/projects/NewProject
 ```
 
-- `status` reads durable runtime state; it does not parse terminal content.
+- `status` reads durable runtime state and shows branch, HEAD, and clean/dirty
+  counts for each fixed worktree. Dirty state is informational and is never
+  cleaned or changed by this command.
 - `verify` checks the fixed live panes without dispatching product work.
 - `sync` redeploys template-owned files while preserving task history.
 - `stop` stops tmux only; worktrees, task records, and reports remain.

@@ -11,6 +11,7 @@ from pathlib import Path
 from .bootstrap import sync_project
 from .config import ROLES, ProjectConfig, load_project
 from .doctor import print_checks, run_doctor
+from .project import git
 
 
 class LifecycleError(RuntimeError):
@@ -81,6 +82,53 @@ def verify_workflow(root: str | Path) -> int:
     return int(failure)
 
 
+def _worktree_git_status(config: ProjectConfig, role: str) -> dict[str, object]:
+    repo = config.repo(role)
+    branch_result = git(repo, "branch", "--show-current", check=False)
+    head_result = git(repo, "rev-parse", "--short=7", "HEAD", check=False)
+    status_result = git(
+        repo, "status", "--porcelain=v1", "--untracked-files=normal", check=False
+    )
+    branch = branch_result.stdout.strip() if branch_result.returncode == 0 else ""
+    head = head_result.stdout.strip() if head_result.returncode == 0 else ""
+    if status_result.returncode == 0:
+        changes = [line for line in status_result.stdout.splitlines() if line]
+        modified = sum(not line.startswith("??") for line in changes)
+        untracked = sum(line.startswith("??") for line in changes)
+        state = "CLEAN" if not changes else "DIRTY"
+    else:
+        modified = untracked = "UNKNOWN"
+        state = "UNKNOWN"
+    return {
+        "role": role,
+        "repo": "main" if role == "supervisor" else role,
+        "branch": branch or "UNKNOWN",
+        "head": head or "UNKNOWN",
+        "state": state,
+        "modified": modified,
+        "untracked": untracked,
+    }
+
+
+def _legacy_authority_workflows(config: ProjectConfig) -> list[str]:
+    workflows: set[str] = set()
+    tasks = config.runtime_root / "tasks"
+    for path in sorted(tasks.glob("*/contract.json")) if tasks.is_dir() else []:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        authority = payload.get("effective_authority") if isinstance(payload, dict) else None
+        workflow_id = payload.get("workflow_id") if isinstance(payload, dict) else None
+        if (
+            isinstance(authority, dict)
+            and authority.get("status") == "LEGACY_AUTHORITY_WARNING"
+            and isinstance(workflow_id, str)
+        ):
+            workflows.add(workflow_id)
+    return sorted(workflows)
+
+
 def status_workflow(root: str | Path) -> int:
     config = load_project(root)
     print(f"Runtime: {'RUNNING' if is_live(config) else 'STOPPED'}")
@@ -104,4 +152,19 @@ def status_workflow(root: str | Path) -> int:
             f"{row.get('execution_status', 'IDLE'):14} "
             f"{row.get('callback_status', 'NONE'):10} {row.get('error_code', '') or '-'}"
         )
+    print()
+    print("Git worktrees (read-only; DIRTY is informational)")
+    print("Role          Repo          Branch                    HEAD     State    Modified Untracked")
+    for role in ROLES:
+        row = _worktree_git_status(config, role)
+        print(
+            f"{row['role']:13} {row['repo']:13} {row['branch']:25} "
+            f"{row['head']:8} {row['state']:8} {str(row['modified']):8} {row['untracked']}"
+        )
+    legacy = _legacy_authority_workflows(config)
+    if legacy:
+        print()
+        print("Warnings")
+        for workflow_id in legacy:
+            print(f"LEGACY_AUTHORITY_WARNING workflow:{workflow_id}")
     return 0

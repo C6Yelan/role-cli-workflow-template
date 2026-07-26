@@ -13,6 +13,9 @@
 - Added concise English and Traditional Chinese guides for setup, configuration, operations, and recovery.
 - Replaced fixed all-role dispatch with one set of execution profiles, an Implementer–Evaluator feedback loop, sequential evidence-based review, and conditional documentation work.
 - Enforced Evaluator and Reviewer verdict fields in Result Envelopes and normalized legacy preflight profiles at read time without restoring old CLI options.
+- Added a clear rename error for the removed `--profile` option while keeping `--execution-profile` as the only preflight interface.
+- Added read-only clean/dirty Git summaries to `status`; dirty worktrees remain untouched and individual query failures display `UNKNOWN`.
+- Kept legacy authority warnings visible in status while suppressing repeated dispatch warnings for the same workflow without adding acknowledgement state.
 
 ## 0.1.3 — 2026-07-19
 
