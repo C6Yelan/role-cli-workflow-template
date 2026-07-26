@@ -1,0 +1,34 @@
+[project]
+name = "codex-role-workflow"
+version = "0.2.0"
+description = "Fixed six-role AI CLI project workflow for Linux and WSL"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12,<3.13"
+dependencies = ["mcp==1.28.1"]
+keywords = ["ai-cli", "workflow", "mcp", "tmux", "git-worktree"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3.12",
+]
+
+[project.scripts]
+codex-role-workflow = "codex_role_workflow.cli:main"
+
+[dependency-groups]
+dev = ["pytest==9.0.3"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/codex_role_workflow"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"templates" = "codex_role_workflow/templates"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

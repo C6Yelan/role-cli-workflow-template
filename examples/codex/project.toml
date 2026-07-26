@@ -1,0 +1,37 @@
+[project]
+name = "example-project"
+root = "/home/user/projects/example-project"
+main_repo = "main"
+workflow_dir = "shared_workspace/workflow"
+
+[cli]
+provider = "codex"
+command = "codex"
+args = []
+version_args = ["--version"]
+login_check_args = ["login", "status"]
+
+# Optional defaults for every role.
+# model = "your-model"
+# reasoning_effort = "medium"
+
+# Optional per-role overrides.
+# [cli.roles.supervisor]
+# model = "your-model"
+# reasoning_effort = "medium"
+# args = []
+
+[git]
+base_branch = "development"
+role_branch_prefix = "workflow/"
+feature_branch_pattern = "feature/*"
+protected_branches = ["development", "main"]
+
+[paths]
+private = [".env", ".env.*", "private_docs/", "secrets/", "credentials/", "*.pem", "*.key"]
+
+[commands]
+test = ""
+lint = ""
+build = ""
+format = ""

@@ -1,0 +1,37 @@
+# Changelog
+
+## 0.2.0 — 2026-07-26
+
+- Added a generic CLI provider contract with per-role arguments, placeholders, and environment variables while retaining Codex as the default provider.
+- Added provider-neutral default model and reasoning settings with per-role overrides.
+- Removed the fixed Codex version requirement; doctor now reports the configured CLI version without comparing it to a pinned value.
+- Replaced the private-use restriction with the MIT License and removed private project identifiers from public examples and tests.
+- Added explicit cancellation plus retryable task wakeups and callbacks without introducing a background scheduler.
+- Restored a single-sourced long-command lifecycle rule, tolerated pane recreation, reduced read-path projection writes, and limited semantic reassessment to contract-sensitive work.
+- Made callback wakeups task-specific and kept terminal task IDs visible in the workflow dashboard.
+- Added concise English and Traditional Chinese guides for setup, configuration, operations, and recovery.
+
+## 0.1.3 — 2026-07-19
+
+- Connected Reviewer assessment and semantic-repair reassessment to fixed CLI commands and the existing `send_rework` execution path.
+- Required a current resolved proportionality checkpoint for second-or-later semantic repairs while leaving mechanical and recovery rework unchanged.
+- Made successful Bridge rework dispatch update refinement events and retrospective counters automatically; advisory/deferred hardening is no longer dispatchable as semantic rework.
+
+## 0.1.2 — 2026-07-19
+
+- Made `STANDARD` the explicit default and required a concrete qualifying risk trigger and reason before selecting `CONTRACT_SENSITIVE`.
+- Replaced the fixed eight-field contract ratchet with traceable critical invariants, a Completion Gate, applicable failure preservation, and invariant-linked negative tests; optional hardening is no longer frozen automatically.
+- Added separate Reviewer correctness/proportionality guidance, semantic-repair reassessment, Implementer complexity-conflict reporting, and one effective authority projection with superseded history retained for audit only.
+
+## 0.1.1 — 2026-07-19
+
+- Added task-scoped STANDARD / CONTRACT_SENSITIVE preflight metadata, compact contract freeze, event classification, retrospective counters, and final candidate SHA freeze.
+- Added a fixed Supervisor-only, single-approval add/commit/push transaction plan and executor with exact-scope invalidation and partial failure recovery.
+- Separated pane/process telemetry, task execution, and MCP activity; unreliable probes now display UNKNOWN and compact callback status is the default.
+- Preserved the six-role MCP tool matrix, Task Contract, Result Envelope, tmux transport, merge approval, and existing instance history.
+
+## 0.1.0 — 2026-07-19
+
+- Extracted a fixed six-role Supervisor workflow into a project-root-driven Linux/WSL template.
+- Added init, sync, doctor, open, verify, attach, status, and stop commands.
+- Preserved Task Contract, context refs, Result Envelope, callbacks, BLOCKED recovery, deterministic Markdown, observability, and role Git policy.

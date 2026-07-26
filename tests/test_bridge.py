@@ -1,0 +1,51 @@
+from __future__ import annotations
+
+import importlib
+import os
+from pathlib import Path
+
+from codex_role_workflow.bootstrap import init_project
+
+
+def test_role_tool_matrix(project_root: Path, monkeypatch) -> None:
+    init_project(project_root, assume_yes=True)
+    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_PROJECT_ROOT", str(project_root))
+    server = importlib.import_module("codex_role_workflow.bridge.server")
+    expected_worker = {"get_current_task", "get_context", "submit_result", "report_blocked"}
+    expected_supervisor = {
+        "list_roles", "assign_task", "cancel_task", "retry_dispatch",
+        "retry_callback", "get_task_result", "send_rework", "record_decision",
+    }
+    for role in ("supervisor", "explorer", "implementer", "evaluator", "reviewer", "doc-curator"):
+        names = {tool.name for tool in server.create_mcp(role)._tool_manager.list_tools()}
+        assert names == (expected_supervisor if role == "supervisor" else expected_worker)
+
+
+def test_bridge_uses_generic_trigger_and_task_contract(project_root: Path, monkeypatch) -> None:
+    init_project(project_root, assume_yes=True)
+    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_PROJECT_ROOT", str(project_root))
+    state = importlib.import_module("codex_role_workflow.bridge.state")
+    assert "CODEX_ROLE_WORKFLOW_TASK_AVAILABLE" in state.TASK_TRIGGER
+    assert len(state.TASK_TRIGGER) < 256
+    assert "objective" not in state.TASK_TRIGGER
+
+
+def test_send_rework_exposes_existing_semantic_checkpoint_field(project_root: Path, monkeypatch) -> None:
+    init_project(project_root, assume_yes=True)
+    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_PROJECT_ROOT", str(project_root))
+    server = importlib.import_module("codex_role_workflow.bridge.server")
+    tool = next(
+        item for item in server.create_mcp("supervisor")._tool_manager.list_tools()
+        if item.name == "send_rework"
+    )
+    assert "invariant_type" in tool.parameters["properties"]
+
+
+def test_long_command_protocol_is_single_sourced_and_deployed(project_root: Path) -> None:
+    init_project(project_root, assume_yes=True)
+    source = Path(__file__).parents[1] / "templates/roles/long-command-protocol.md"
+    marker = "preserve that exact ID"
+    assert marker in source.read_text(encoding="utf-8")
+    for role in ("supervisor", "explorer", "implementer", "evaluator", "reviewer", "doc-curator"):
+        deployed = project_root / "shared_workspace/roles" / f"{role}.md"
+        assert deployed.read_text(encoding="utf-8").count(marker) == 1
