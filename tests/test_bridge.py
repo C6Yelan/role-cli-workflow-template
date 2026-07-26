@@ -4,13 +4,13 @@ import importlib
 import os
 from pathlib import Path
 
-from codex_role_workflow.bootstrap import init_project
+from role_cli_workflow.bootstrap import init_project
 
 
 def test_role_tool_matrix(project_root: Path, monkeypatch) -> None:
     init_project(project_root, assume_yes=True)
-    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_PROJECT_ROOT", str(project_root))
-    server = importlib.import_module("codex_role_workflow.bridge.server")
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_PROJECT_ROOT", str(project_root))
+    server = importlib.import_module("role_cli_workflow.bridge.server")
     expected_worker = {"get_current_task", "get_context", "submit_result", "report_blocked"}
     expected_supervisor = {
         "list_roles", "assign_task", "cancel_task", "retry_dispatch",
@@ -23,17 +23,17 @@ def test_role_tool_matrix(project_root: Path, monkeypatch) -> None:
 
 def test_bridge_uses_generic_trigger_and_task_contract(project_root: Path, monkeypatch) -> None:
     init_project(project_root, assume_yes=True)
-    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_PROJECT_ROOT", str(project_root))
-    state = importlib.import_module("codex_role_workflow.bridge.state")
-    assert "CODEX_ROLE_WORKFLOW_TASK_AVAILABLE" in state.TASK_TRIGGER
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_PROJECT_ROOT", str(project_root))
+    state = importlib.import_module("role_cli_workflow.bridge.state")
+    assert "ROLE_CLI_WORKFLOW_TASK_AVAILABLE" in state.TASK_TRIGGER
     assert len(state.TASK_TRIGGER) < 256
     assert "objective" not in state.TASK_TRIGGER
 
 
 def test_send_rework_exposes_existing_semantic_checkpoint_field(project_root: Path, monkeypatch) -> None:
     init_project(project_root, assume_yes=True)
-    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_PROJECT_ROOT", str(project_root))
-    server = importlib.import_module("codex_role_workflow.bridge.server")
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_PROJECT_ROOT", str(project_root))
+    server = importlib.import_module("role_cli_workflow.bridge.server")
     tool = next(
         item for item in server.create_mcp("supervisor")._tool_manager.list_tools()
         if item.name == "send_rework"

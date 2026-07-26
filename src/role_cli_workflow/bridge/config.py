@@ -15,11 +15,11 @@ class ConfigurationError(RuntimeError):
 
 
 def _project_root() -> Path:
-    raw = os.environ.get("CODEX_ROLE_WORKFLOW_PROJECT_ROOT", "")
+    raw = os.environ.get("ROLE_CLI_WORKFLOW_PROJECT_ROOT", "")
     if not raw:
         raise ConfigurationError("project root environment is missing")
     root = Path(raw).expanduser().resolve()
-    marker = root / ".codex-workflow" / "project.toml"
+    marker = root / ".role-cli-workflow" / "project.toml"
     if not marker.is_file():
         raise ConfigurationError("project root is not initialized")
     return root

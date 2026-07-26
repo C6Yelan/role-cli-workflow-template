@@ -49,14 +49,14 @@ DECISIONS_DIR = RUNTIME_ROOT / "decisions"
 LOG_DIR = RUNTIME_ROOT / "logs"
 
 TASK_TRIGGER = (
-    "[CODEX_ROLE_WORKFLOW_TASK_AVAILABLE]\n"
+    "[ROLE_CLI_WORKFLOW_TASK_AVAILABLE]\n"
     "Call get_current_task.\n"
     "Read only the context you need.\n"
     "Complete the task and submit the result.\n"
-    "[/CODEX_ROLE_WORKFLOW_TASK_AVAILABLE]"
+    "[/ROLE_CLI_WORKFLOW_TASK_AVAILABLE]"
 )
 RESULT_TRIGGER = (
-    "[CODEX_ROLE_WORKFLOW_RESULT_AVAILABLE]\n"
+    "[ROLE_CLI_WORKFLOW_RESULT_AVAILABLE]\n"
     "Workflow: {workflow_id}\n"
     "Task: {task_id}\n"
     "Role: {role}\n"
@@ -64,12 +64,12 @@ RESULT_TRIGGER = (
     "Call list_roles and inspect this task's callback status.\n"
     "Call get_task_result for task {task_id}.\n"
     "Analyze the result or blocker and report it to the user.\n"
-    "[/CODEX_ROLE_WORKFLOW_RESULT_AVAILABLE]"
+    "[/ROLE_CLI_WORKFLOW_RESULT_AVAILABLE]"
 )
 WORKER_STARTED_TRIGGER = (
-    "[CODEX_ROLE_WORKFLOW_WORKER_STARTED]\n"
+    "[ROLE_CLI_WORKFLOW_WORKER_STARTED]\n"
     "Call list_roles and show compact workflow status.\n"
-    "[/CODEX_ROLE_WORKFLOW_WORKER_STARTED]"
+    "[/ROLE_CLI_WORKFLOW_WORKER_STARTED]"
 )
 RECENT_ACTIVITY_WINDOW = timedelta(minutes=5)
 LOCK_TIMEOUT_SECONDS = 5.0

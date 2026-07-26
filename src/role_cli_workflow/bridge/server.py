@@ -28,7 +28,7 @@ def _safe(call: Callable[[], dict[str, Any]]) -> dict[str, Any]:
 
 def create_mcp(caller_role: str, store_factory: Callable[[str], TaskStore] = TaskStore) -> FastMCP:
     caller_role = validate_caller_role(caller_role)
-    bridge = FastMCP("codex-role-workflow", instructions=f"Fixed coordination tools for role {caller_role}.")
+    bridge = FastMCP("role-cli-workflow", instructions=f"Fixed coordination tools for role {caller_role}.")
     store: TaskStore | None = None
     def get_store() -> TaskStore:
         nonlocal store
@@ -74,12 +74,12 @@ def create_mcp(caller_role: str, store_factory: Callable[[str], TaskStore] = Tas
 
 def main() -> None:
     try:
-        role = validate_caller_role(os.environ.get("CODEX_ROLE_WORKFLOW_ROLE"))
+        role = validate_caller_role(os.environ.get("ROLE_CLI_WORKFLOW_ROLE"))
         create_mcp(role).run(transport="stdio")
     except ValidationError as exc:
         raise SystemExit(str(exc)) from None
     except Exception as exc:
-        print(f"codex-role-workflow initialization failed: {type(exc).__name__}", file=sys.stderr)
+        print(f"role-cli-workflow initialization failed: {type(exc).__name__}", file=sys.stderr)
         raise SystemExit(1) from None
 
 

@@ -7,8 +7,8 @@ if [[ $# -ne 1 ]]; then
 fi
 
 root="$(realpath -- "$1")"
-codex-role-workflow doctor "$root"
-codex-role-workflow open "$root"
-codex-role-workflow verify "$root"
-codex-role-workflow status "$root"
-codex-role-workflow stop "$root"
+role-cli-workflow doctor "$root"
+role-cli-workflow open "$root"
+role-cli-workflow verify "$root"
+role-cli-workflow status "$root"
+role-cli-workflow stop "$root"

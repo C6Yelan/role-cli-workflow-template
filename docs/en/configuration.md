@@ -1,11 +1,11 @@
 # Configuration
 
-Project settings live in `.codex-workflow/project.toml`. After editing the
+Project settings live in `.role-cli-workflow/project.toml`. After editing the
 file, run:
 
 ```bash
-codex-role-workflow sync ~/projects/NewProject
-codex-role-workflow doctor ~/projects/NewProject
+role-cli-workflow sync ~/projects/NewProject
+role-cli-workflow doctor ~/projects/NewProject
 ```
 
 ## Model selection

@@ -61,13 +61,13 @@ def _autoload_ok(codex: str, repo: Path, role: str) -> bool:
         result = subprocess.run([codex, "-C", str(repo), "debug", "prompt-input"], text=True, capture_output=True, shell=False, check=False, timeout=10)
     except subprocess.TimeoutExpired:
         return False
-    return result.returncode == 0 and f"CODEX_ROLE_WORKFLOW_CONFIG_PROBE:{role}" in result.stdout
+    return result.returncode == 0 and f"ROLE_CLI_WORKFLOW_CONFIG_PROBE:{role}" in result.stdout
 
 
 async def _handshake(root: Path, role: str) -> set[str]:
     env = {
-        "CODEX_ROLE_WORKFLOW_PROJECT_ROOT": str(root),
-        "CODEX_ROLE_WORKFLOW_ROLE": role,
+        "ROLE_CLI_WORKFLOW_PROJECT_ROOT": str(root),
+        "ROLE_CLI_WORKFLOW_ROLE": role,
     }
     params = StdioServerParameters(
         command=str(root / "shared_workspace" / "scripts" / "run_bridge_server.sh"),

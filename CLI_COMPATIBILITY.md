@@ -18,6 +18,6 @@
 
 The workflow does not compare the configured CLI against a pinned version. `doctor` checks that the command exists and, when `version_args` is configured, that its version command succeeds. CLI upgrades should be followed by `sync`, `doctor`, and the provider's own compatibility checks.
 
-The generic provider is deliberately an adapter boundary because AI CLI tools do not share one configuration, MCP, sandbox, approval, or authentication syntax. The adapter is responsible for consuming the documented arguments or `ROLE_WORKFLOW_*` environment variables and enforcing the intended role policy.
+The generic provider is deliberately an adapter boundary because AI CLI tools do not share one configuration, MCP, sandbox, approval, or authentication syntax. The adapter is responsible for consuming the documented arguments or `ROLE_CLI_WORKFLOW_*` environment variables and enforcing the intended role policy.
 
 `cli.model` and `cli.reasoning_effort` provide provider-neutral defaults. Values under `cli.roles.<role>` override those defaults for one role; omitted values remain owned by the configured CLI.

@@ -24,7 +24,7 @@ PARTIAL_STATES = (
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _SAFE_REF = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,255}\Z")
 _FORBIDDEN_PATH_PATTERNS = (
-    ".codex", ".codex/*", ".codex-workflow", ".codex-workflow/*",
+    ".codex", ".codex/*", ".role-cli-workflow", ".role-cli-workflow/*",
     "shared_workspace/runtime", "shared_workspace/runtime/*",
     "shared_workspace/workflow/tasks/*/data/*",
     "*.pem", "*.key", "*.p12", "*.pfx", "*.crt", "*.cer",
@@ -244,7 +244,7 @@ class GitTransactionStore:
         return payload
 
     def approve(self, transaction_id: str, approval_summary: str) -> dict[str, Any]:
-        if os.environ.get("CODEX_ROLE_WORKFLOW_ROLE") != "supervisor":
+        if os.environ.get("ROLE_CLI_WORKFLOW_ROLE") != "supervisor":
             raise GitTransactionError("only Supervisor may approve a Git transaction")
         path = self._path(transaction_id)
         payload = _read(path)
@@ -288,7 +288,7 @@ class GitTransactionStore:
         return plan
 
     def execute(self, transaction_id: str) -> dict[str, Any]:
-        if os.environ.get("CODEX_ROLE_WORKFLOW_ROLE") != "supervisor":
+        if os.environ.get("ROLE_CLI_WORKFLOW_ROLE") != "supervisor":
             raise GitTransactionError("only Supervisor may execute a Git transaction")
         path = self._path(transaction_id)
         payload = _read(path)

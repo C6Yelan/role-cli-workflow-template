@@ -4,8 +4,8 @@ import importlib
 from datetime import datetime, timezone
 from pathlib import Path
 
-from codex_role_workflow.bootstrap import init_project
-from codex_role_workflow.bridge.models import RoleConfig, TaskRecord
+from role_cli_workflow.bootstrap import init_project
+from role_cli_workflow.bridge.models import RoleConfig, TaskRecord
 
 
 class Probe:
@@ -38,8 +38,8 @@ def store_for(module, status: str, latest: TaskRecord):
 
 def test_recent_mcp_activity_prevents_false_down_and_keeps_execution_separate(project_root: Path, monkeypatch) -> None:
     init_project(project_root, assume_yes=True)
-    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_PROJECT_ROOT", str(project_root))
-    module = importlib.import_module("codex_role_workflow.bridge.state")
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_PROJECT_ROOT", str(project_root))
+    module = importlib.import_module("role_cli_workflow.bridge.state")
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     row = store_for(module, "DOWN", record(now))._role_rows()[0]
     assert row["process_status"] == "UNKNOWN"
@@ -49,8 +49,8 @@ def test_recent_mcp_activity_prevents_false_down_and_keeps_execution_separate(pr
 
 def test_uncertain_probe_is_unknown_not_down(project_root: Path, monkeypatch) -> None:
     init_project(project_root, assume_yes=True)
-    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_PROJECT_ROOT", str(project_root))
-    module = importlib.import_module("codex_role_workflow.bridge.state")
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_PROJECT_ROOT", str(project_root))
+    module = importlib.import_module("role_cli_workflow.bridge.state")
     row = store_for(module, "UNKNOWN", record("", "DISPATCHED"))._role_rows()[0]
     assert row["process_status"] == "UNKNOWN"
     assert row["execution_status"] == "DISPATCHED"

@@ -15,10 +15,10 @@ From a local checkout:
 uv tool install /path/to/role-cli-workflow-template
 ```
 
-After the template is published:
+From GitHub:
 
 ```bash
-uv tool install "git+https://github.com/<owner>/<repository>.git"
+uv tool install "git+https://github.com/C6Yelan/role-cli-workflow-template.git"
 ```
 
 ## Prepare a project
@@ -30,10 +30,10 @@ Git repository:
 mkdir -p ~/projects/NewProject
 git clone <repo-url> ~/projects/NewProject/main
 
-codex-role-workflow init ~/projects/NewProject
-codex-role-workflow doctor ~/projects/NewProject
-codex-role-workflow open ~/projects/NewProject
-codex-role-workflow attach ~/projects/NewProject
+role-cli-workflow init ~/projects/NewProject
+role-cli-workflow doctor ~/projects/NewProject
+role-cli-workflow open ~/projects/NewProject
+role-cli-workflow attach ~/projects/NewProject
 ```
 
 `init` shows the planned branches and worktrees before asking for confirmation.
@@ -47,10 +47,10 @@ are fixed Worker roles and receive tasks through the role bridge.
 Useful commands:
 
 ```bash
-codex-role-workflow status ~/projects/NewProject
-codex-role-workflow verify ~/projects/NewProject
-codex-role-workflow sync ~/projects/NewProject
-codex-role-workflow stop ~/projects/NewProject
+role-cli-workflow status ~/projects/NewProject
+role-cli-workflow verify ~/projects/NewProject
+role-cli-workflow sync ~/projects/NewProject
+role-cli-workflow stop ~/projects/NewProject
 ```
 
 - `status` reads durable runtime state; it does not parse terminal content.

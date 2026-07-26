@@ -15,10 +15,10 @@
 uv tool install /path/to/role-cli-workflow-template
 ```
 
-模板公開後，可從 GitHub 安裝：
+從 GitHub 安裝：
 
 ```bash
-uv tool install "git+https://github.com/<owner>/<repository>.git"
+uv tool install "git+https://github.com/C6Yelan/role-cli-workflow-template.git"
 ```
 
 ## 準備專案
@@ -29,10 +29,10 @@ project root 是容器資料夾，其中的 `main/` 必須已經是 Git reposito
 mkdir -p ~/projects/NewProject
 git clone <repo-url> ~/projects/NewProject/main
 
-codex-role-workflow init ~/projects/NewProject
-codex-role-workflow doctor ~/projects/NewProject
-codex-role-workflow open ~/projects/NewProject
-codex-role-workflow attach ~/projects/NewProject
+role-cli-workflow init ~/projects/NewProject
+role-cli-workflow doctor ~/projects/NewProject
+role-cli-workflow open ~/projects/NewProject
+role-cli-workflow attach ~/projects/NewProject
 ```
 
 `init` 會先顯示預計建立的 branches 與 worktrees，再要求確認。它不會
@@ -46,10 +46,10 @@ role bridge 接收任務。
 常用指令：
 
 ```bash
-codex-role-workflow status ~/projects/NewProject
-codex-role-workflow verify ~/projects/NewProject
-codex-role-workflow sync ~/projects/NewProject
-codex-role-workflow stop ~/projects/NewProject
+role-cli-workflow status ~/projects/NewProject
+role-cli-workflow verify ~/projects/NewProject
+role-cli-workflow sync ~/projects/NewProject
+role-cli-workflow stop ~/projects/NewProject
 ```
 
 - `status` 讀取持久化 runtime state，不解析終端畫面。

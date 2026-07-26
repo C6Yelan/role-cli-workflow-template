@@ -23,13 +23,13 @@ uv tool install /path/to/role-cli-workflow-template
 mkdir -p ~/projects/NewProject
 git clone <repo-url> ~/projects/NewProject/main
 
-codex-role-workflow init ~/projects/NewProject
-codex-role-workflow doctor ~/projects/NewProject
-codex-role-workflow open ~/projects/NewProject
-codex-role-workflow attach ~/projects/NewProject
+role-cli-workflow init ~/projects/NewProject
+role-cli-workflow doctor ~/projects/NewProject
+role-cli-workflow open ~/projects/NewProject
+role-cli-workflow attach ~/projects/NewProject
 ```
 
-After the repository is published, it can also be installed directly from its Git URL with `uv tool install "git+https://github.com/<owner>/<repository>.git"`.
+It can also be installed directly from GitHub with `uv tool install "git+https://github.com/C6Yelan/role-cli-workflow-template.git"`.
 
 `init` displays the base branch, five role branches, worktree destinations, and main working-tree cleanliness before asking for `yes`. It never overwrites `main`, commits, pushes, resets, or cleans. For noninteractive isolated tests only, `init --yes` accepts the displayed local worktree creation.
 
@@ -49,7 +49,7 @@ After the repository is published, it can also be installed directly from its Gi
 │   ├── workflow/          human-readable projections and task documents
 │   ├── scripts/           fixed role launchers
 │   └── runtime/           TaskStore and fixed tmux socket
-└── .codex-workflow/
+└── .role-cli-workflow/
     ├── project.toml
     ├── project_instructions.md
     └── VERSION
@@ -72,7 +72,7 @@ After `attach`, use the mouse wheel for history, click the bottom window labels 
 
 ## Configuration
 
-`.codex-workflow/project.toml` contains project identity, CLI provider settings, optional per-role launch overrides, base/branch policy, private paths, and optional `test`, `lint`, `build`, and `format` commands. Empty commands produce doctor warnings; init never guesses or runs package scripts. The workflow does not pin or require one Codex version.
+`.role-cli-workflow/project.toml` contains project identity, CLI provider settings, optional per-role launch overrides, base/branch policy, private paths, and optional `test`, `lint`, `build`, and `format` commands. Empty commands produce doctor warnings; init never guesses or runs package scripts. The workflow does not pin or require one Codex version.
 
 Model and reasoning settings use one provider-neutral surface. Values under `[cli]` are defaults for every role; `[cli.roles.<role>]` overrides only that role. When a field is omitted at both levels, the launcher leaves the choice to the configured CLI. Values are passed through without a template-side allowlist, so model availability remains the responsibility of the installed CLI and account:
 
@@ -117,11 +117,11 @@ version_args = ["--version"]
 login_check_args = []
 ```
 
-Supported placeholders are `{project_root}`, `{repo}`, `{role}`, `{model}`, `{reasoning_effort}`, `{role_instructions}`, `{bridge_command}`, `{bridge_cwd}`, and `{enabled_tools}`. The same values are exported as `ROLE_WORKFLOW_PROJECT_ROOT`, `ROLE_WORKFLOW_REPO`, `ROLE_WORKFLOW_ROLE`, `ROLE_WORKFLOW_MODEL`, `ROLE_WORKFLOW_REASONING_EFFORT`, `ROLE_WORKFLOW_ROLE_INSTRUCTIONS`, `ROLE_WORKFLOW_MCP_COMMAND`, `ROLE_WORKFLOW_MCP_CWD`, and `ROLE_WORKFLOW_MCP_ENABLED_TOOLS`. Model-related variables are omitted when no model or reasoning effort is configured; using their placeholders without a configured value is an error.
+Supported placeholders are `{project_root}`, `{repo}`, `{role}`, `{model}`, `{reasoning_effort}`, `{role_instructions}`, `{bridge_command}`, `{bridge_cwd}`, and `{enabled_tools}`. The same values are exported as `ROLE_CLI_WORKFLOW_PROJECT_ROOT`, `ROLE_CLI_WORKFLOW_REPO`, `ROLE_CLI_WORKFLOW_ROLE`, `ROLE_CLI_WORKFLOW_MODEL`, `ROLE_CLI_WORKFLOW_REASONING_EFFORT`, `ROLE_CLI_WORKFLOW_ROLE_INSTRUCTIONS`, `ROLE_CLI_WORKFLOW_MCP_COMMAND`, `ROLE_CLI_WORKFLOW_MCP_CWD`, and `ROLE_CLI_WORKFLOW_MCP_ENABLED_TOOLS`. Model-related variables are omitted when no model or reasoning effort is configured; using their placeholders without a configured value is an error.
 
 The adapter must load the role instructions, register the supplied stdio MCP server, restrict tools to the supplied role matrix, and implement the intended sandbox, approval, trust, authentication, and Git policy. Those controls are provider-specific and cannot be inferred safely from one universal command line. See `examples/generic/project.toml`.
 
-`.codex-workflow/project_instructions.md` contains conservative project-specific candidates and TODOs. Fixed Git, MCP, safety, role, and result rules remain canonical in `shared_workspace/roles` and `shared_workspace/role_bridge/config`.
+`.role-cli-workflow/project_instructions.md` contains conservative project-specific candidates and TODOs. Fixed Git, MCP, safety, role, and result rules remain canonical in `shared_workspace/roles` and `shared_workspace/role_bridge/config`.
 
 With the Codex provider, each worktree receives a local `.codex/config.toml` and `.codex/rules/` deployment. `sync` adds `.codex/` to Git's local `info/exclude`; it does not change product `.gitignore`, `CODEX_HOME`, global Codex config/rules, authentication, history, sessions, or logs. Generic providers receive no guessed provider-local configuration.
 
@@ -155,7 +155,7 @@ Each workflow may add `tasks/<workflow-id>/data/preflight.json` plus a short `pr
 Direct Supervisor Git writes keep their existing per-command prompts. To request one approval for an exact add/commit/push subset, create a read-only plan and show it to the user:
 
 ```bash
-codex-role-workflow git plan ~/projects/NewProject tx-001 \
+role-cli-workflow git plan ~/projects/NewProject tx-001 \
   --workflow-id wf-001 --task-id task-001 --repo-id main \
   --operation add --operation commit --operation push \
   --file path/to/file.py --commit-message "Implement approved task"
@@ -164,9 +164,9 @@ codex-role-workflow git plan ~/projects/NewProject tx-001 \
 After the user explicitly approves that displayed transaction, Supervisor records the approval and executes the fixed command:
 
 ```bash
-codex-role-workflow git approve ~/projects/NewProject tx-001 \
+role-cli-workflow git approve ~/projects/NewProject tx-001 \
   --approval-summary "User approved the displayed tx-001 plan"
-codex-role-workflow git execute ~/projects/NewProject tx-001
+role-cli-workflow git execute ~/projects/NewProject tx-001
 ```
 
 The executor accepts no arbitrary repo path, shell command or extra Git argument. It revalidates branch, HEAD, exact files and content, message, remote/ref, sensitive paths and fast-forward safety. Scope drift invalidates the approval. Push retry resumes only after a saved `PUSH_FAILED`; it does not redo add or commit. Merge and integration-branch push always remain separate approvals.
@@ -178,8 +178,8 @@ Status output treats pane/process telemetry (`ALIVE`, `DOWN`, `UNKNOWN`), task e
 Every fixed worktree must be trusted in the active global Codex configuration before `open`. `doctor` stops with FAIL and prints the affected paths when trust is missing. Open each fixed repository with Codex and approve project trust using the normal Codex prompt, then rerun:
 
 ```bash
-codex-role-workflow sync ~/projects/NewProject
-codex-role-workflow doctor ~/projects/NewProject
+role-cli-workflow sync ~/projects/NewProject
+role-cli-workflow doctor ~/projects/NewProject
 ```
 
 Codex versions are not pinned or compared. Rerun doctor and the compatibility checks after upgrades. A stale exact socket is reported and safely replaced by `open` only when no fixed live session exists. `stop` is idempotent.
@@ -188,7 +188,7 @@ For a generic provider, `doctor` validates the configured executable, optional v
 
 ## Remove the workflow but keep main
 
-First run `stop`. Preserve any role commits you need, then manually remove the five linked worktrees with normal Git worktree commands. Finally remove `shared_workspace/` and `.codex-workflow/`. The template never automates this destructive removal and never deletes `main`.
+First run `stop`. Preserve any role commits you need, then manually remove the five linked worktrees with normal Git worktree commands. Finally remove `shared_workspace/` and `.role-cli-workflow/`. The template never automates this destructive removal and never deletes `main`.
 
 ## License
 

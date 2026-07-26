@@ -2,7 +2,7 @@
 
 Runtime JSON under `shared_workspace/runtime/` is the source of truth.
 Markdown under `shared_workspace/workflow/` is a human-readable projection.
-Use `codex-role-workflow status <project-root>` before deciding that a role or
+Use `role-cli-workflow status <project-root>` before deciding that a role or
 task has failed.
 
 ## Common states
@@ -35,9 +35,9 @@ session is unresolved.
 ## Runtime restart
 
 ```bash
-codex-role-workflow stop ~/projects/NewProject
-codex-role-workflow doctor ~/projects/NewProject
-codex-role-workflow open ~/projects/NewProject
+role-cli-workflow stop ~/projects/NewProject
+role-cli-workflow doctor ~/projects/NewProject
+role-cli-workflow open ~/projects/NewProject
 ```
 
 Stopping the tmux runtime preserves worktrees, task state, results, decisions,

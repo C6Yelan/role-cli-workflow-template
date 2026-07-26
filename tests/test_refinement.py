@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from codex_role_workflow.bootstrap import init_project
-from codex_role_workflow.cli import parser
-from codex_role_workflow.config import load_project
-from codex_role_workflow.refinement import (
+from role_cli_workflow.bootstrap import init_project
+from role_cli_workflow.cli import parser
+from role_cli_workflow.config import load_project
+from role_cli_workflow.refinement import (
     RefinementError,
     WorkflowRefinementStore,
     classify_task_profile,
@@ -326,8 +326,8 @@ def test_authority_context_exposes_active_projection_not_history(project_root: P
         "wf-contract-1", plan_revision="r1", contract_revision=1,
         plan_projection={"rules": [{"authority_ref": "plan:r1:gate", "text": "Active gate"}]},
     )
-    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_PROJECT_ROOT", str(project_root))
-    state = importlib.import_module("codex_role_workflow.bridge.state")
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_PROJECT_ROOT", str(project_root))
+    state = importlib.import_module("role_cli_workflow.bridge.state")
     monkeypatch.setattr(state, "WORKFLOW_ROOT", config.workflow_root)
     bridge_store = state.TaskStore.__new__(state.TaskStore)
     payload, sections = bridge_store._workflow_metadata_sections("authority:wf-contract-1")

@@ -3,9 +3,9 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
-from codex_role_workflow.bootstrap import init_project
-from codex_role_workflow.bridge.models import RoleConfig
-from codex_role_workflow.config import load_project
+from role_cli_workflow.bootstrap import init_project
+from role_cli_workflow.bridge.models import RoleConfig
+from role_cli_workflow.config import load_project
 
 
 class Pane:
@@ -29,7 +29,7 @@ class FakeTmux:
         self.pastes += 1
         self.pasted_texts.append(text)
         if self.fail_paste:
-            from codex_role_workflow.bridge.tmux_client import TmuxError
+            from role_cli_workflow.bridge.tmux_client import TmuxError
             raise TmuxError("temporary failure")
 
     def probe(self, role: RoleConfig):
@@ -47,8 +47,8 @@ class FakeDocuments:
 
 
 def store_for(project_root: Path, monkeypatch, *, caller: str, tmux: FakeTmux):
-    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_PROJECT_ROOT", str(project_root))
-    state = importlib.import_module("codex_role_workflow.bridge.state")
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_PROJECT_ROOT", str(project_root))
+    state = importlib.import_module("role_cli_workflow.bridge.state")
     config = load_project(project_root)
     runtime = config.runtime_root
     metadata = runtime / "metadata"
@@ -107,7 +107,7 @@ def test_repeated_blocked_report_retries_pending_callback(project_root: Path, mo
     init_project(project_root, assume_yes=True)
     tmux = FakeTmux()
     store = store_for(project_root, monkeypatch, caller="explorer", tmux=tmux)
-    from codex_role_workflow.bridge.models import TaskRecord
+    from role_cli_workflow.bridge.models import TaskRecord
     record = TaskRecord(
         workflow_id="wf-blocked", task_id="task-blocked", role="explorer",
         nonce="0" * 32, round=0, rework_count=0,
@@ -134,11 +134,11 @@ def test_repeated_blocked_report_retries_pending_callback(project_root: Path, mo
 
 def test_terminal_task_id_remains_visible_in_dashboard(project_root: Path, monkeypatch) -> None:
     init_project(project_root, assume_yes=True)
-    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_PROJECT_ROOT", str(project_root))
-    documents = importlib.import_module("codex_role_workflow.bridge.documents")
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_PROJECT_ROOT", str(project_root))
+    documents = importlib.import_module("role_cli_workflow.bridge.documents")
     config = load_project(project_root)
     monkeypatch.setattr(documents, "WORKFLOW_ROOT", config.workflow_root)
-    from codex_role_workflow.bridge.models import TaskRecord
+    from role_cli_workflow.bridge.models import TaskRecord
     record = TaskRecord(
         workflow_id="wf-dashboard", task_id="task-terminal", role="explorer",
         nonce="0" * 32, round=0, rework_count=0,

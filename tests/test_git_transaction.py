@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from codex_role_workflow.bootstrap import init_project
-from codex_role_workflow.config import load_project
-from codex_role_workflow.git_transaction import GitTransactionError, GitTransactionStore
+from role_cli_workflow.bootstrap import init_project
+from role_cli_workflow.config import load_project
+from role_cli_workflow.git_transaction import GitTransactionError, GitTransactionStore
 
 
 def run(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -46,7 +46,7 @@ def test_single_approval_add_commit_push_and_consumption(project_root: Path, tmp
     created = plan(store, ["add", "commit", "push"])
     assert run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip() == before
     assert created["partial_state"] == "NOT_STARTED"
-    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_ROLE", "supervisor")
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_ROLE", "supervisor")
     store.approve("tx-1", "approved exact shown add commit push transaction")
     result = store.execute("tx-1")
     assert result["partial_state"] == "PUSH_COMPLETED"
@@ -61,7 +61,7 @@ def test_add_commit_subset_does_not_push(project_root: Path, tmp_path: Path, mon
     store, repo = setup_transaction_repo(project_root, tmp_path)
     make_change(repo)
     plan(store, ["add", "commit"])
-    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_ROLE", "supervisor")
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_ROLE", "supervisor")
     store.approve("tx-1", "approved add and commit only")
     result = store.execute("tx-1")
     assert result["partial_state"] == "COMMIT_COMPLETED"
@@ -88,7 +88,7 @@ def test_transaction_rejects_merge_protected_secret_and_worker(project_root: Pat
             transaction_id="bad-secret", workflow_id="wf-1", task_id="task-1", repo_id="main",
             operations=["add"], explicit_files=[".env"], commit_message="x",
         )
-    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_ROLE", "implementer")
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_ROLE", "implementer")
     with pytest.raises(GitTransactionError, match="Supervisor"):
         store.approve("missing", "no")
 
@@ -98,7 +98,7 @@ def test_scope_change_invalidates_transaction(project_root: Path, tmp_path: Path
     store, repo = setup_transaction_repo(project_root, tmp_path)
     make_change(repo)
     plan(store, ["add", "commit"])
-    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_ROLE", "supervisor")
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_ROLE", "supervisor")
     store.approve("tx-1", "approved")
     if mutation == "branch":
         run("git", "switch", "-c", "feature/other", cwd=repo)
@@ -116,9 +116,9 @@ def test_push_failure_retries_only_push(project_root: Path, tmp_path: Path, monk
     store, repo = setup_transaction_repo(project_root, tmp_path)
     make_change(repo)
     plan(store, ["add", "commit", "push"])
-    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_ROLE", "supervisor")
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_ROLE", "supervisor")
     store.approve("tx-1", "approved")
-    import codex_role_workflow.git_transaction as module
+    import role_cli_workflow.git_transaction as module
     original = module.git
     attempts = {"push": 0}
     def flaky(repo_path: Path, *arguments: str, check: bool = True):
@@ -142,9 +142,9 @@ def test_add_and_commit_failure_save_partial_state(project_root: Path, tmp_path:
     store, repo = setup_transaction_repo(project_root, tmp_path)
     make_change(repo)
     plan(store, ["add", "commit"])
-    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_ROLE", "supervisor")
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_ROLE", "supervisor")
     store.approve("tx-1", "approved")
-    import codex_role_workflow.git_transaction as module
+    import role_cli_workflow.git_transaction as module
     original = module.git
     def failing(repo_path: Path, *arguments: str, check: bool = True):
         if arguments and arguments[0] == failure:
@@ -160,7 +160,7 @@ def test_approved_plan_tampering_invalidates(project_root: Path, tmp_path: Path,
     store, repo = setup_transaction_repo(project_root, tmp_path)
     make_change(repo)
     plan(store, ["add", "commit"])
-    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_ROLE", "supervisor")
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_ROLE", "supervisor")
     store.approve("tx-1", "approved")
     path = store._path("tx-1")
     payload = json.loads(path.read_text())
@@ -175,7 +175,7 @@ def test_single_approval_records_one_transaction_not_three_interruptions(project
     store, repo = setup_transaction_repo(project_root, tmp_path)
     make_change(repo)
     plan(store, ["add", "commit"])
-    monkeypatch.setenv("CODEX_ROLE_WORKFLOW_ROLE", "supervisor")
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_ROLE", "supervisor")
     store.approve("tx-1", "one approval for the displayed operation subset")
     metrics = json.loads((project_root / "shared_workspace/workflow/tasks/wf-1/data/retrospective-metrics.json").read_text())
     assert metrics["approved_git_transaction_count"] == 1
@@ -183,7 +183,7 @@ def test_single_approval_records_one_transaction_not_three_interruptions(project
 
 
 def test_executor_uses_fixed_argv_and_shell_false() -> None:
-    source = Path(__file__).parents[1] / "src/codex_role_workflow/git_transaction.py"
+    source = Path(__file__).parents[1] / "src/role_cli_workflow/git_transaction.py"
     text = source.read_text(encoding="utf-8")
     assert "shell=True" not in text
     assert "subprocess" not in text

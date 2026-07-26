@@ -2,6 +2,7 @@
 
 ## 0.2.0 — 2026-07-26
 
+- Renamed the distribution, Python module, CLI command, MCP server ID, environment variables, trigger markers, and project metadata directory to the single provider-neutral `role-cli-workflow` identity without a legacy alias.
 - Added a generic CLI provider contract with per-role arguments, placeholders, and environment variables while retaining Codex as the default provider.
 - Added provider-neutral default model and reasoning settings with per-role overrides.
 - Removed the fixed Codex version requirement; doctor now reports the configured CLI version without comparing it to a pinned value.

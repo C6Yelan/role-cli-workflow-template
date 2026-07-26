@@ -148,7 +148,7 @@ Only confirmed project-specific facts belong here. Fixed role, Git, MCP, and saf
 def init_project(root: str | Path, *, assume_yes: bool = False) -> list[str]:
     project_root = Path(root).expanduser().resolve()
     main = project_root / "main"
-    if (project_root / ".codex-workflow" / "project.toml").exists():
+    if (project_root / ".role-cli-workflow" / "project.toml").exists():
         raise BootstrapError("project is already initialized; use sync")
     discovery = detect_repo(main)
     for role in WORKERS:
@@ -164,7 +164,7 @@ def init_project(root: str | Path, *, assume_yes: bool = False) -> list[str]:
             raise BootstrapError("initialization cancelled")
     for role in WORKERS:
         ensure_worktree(main, project_root / role, f"workflow/{role}", base)
-    metadata = project_root / ".codex-workflow"
+    metadata = project_root / ".role-cli-workflow"
     name = project_root.name
     _atomic_text(metadata / "project.toml", _project_toml(project_root, name, base))
     instructions, warnings = _project_instructions(main, base)
@@ -200,8 +200,8 @@ prefix_rule(pattern = ["git", "pull", "--ff-only"], decision = "allow")
         body = read + '''prefix_rule(pattern = ["git", "worktree", "list"], decision = "allow")
 prefix_rule(pattern = ["git", ["add", "commit", "merge", "push"]], decision = "prompt", justification = "Supervisor Git integration requires explicit user approval for this stage.")
 prefix_rule(pattern = ["git", ["rebase", "cherry-pick", "tag"]], decision = "prompt")
-prefix_rule(pattern = ["codex-role-workflow", "git", ["plan", "approve", "execute", "show"]], decision = "allow", justification = "Fixed executor requires a matching approved transaction and accepts no arbitrary command or repo path.")
-prefix_rule(pattern = ["codex-role-workflow", "workflow", ["preflight", "freeze-contract", "approve-contract-change", "freeze-sha"]], decision = "allow")
+prefix_rule(pattern = ["role-cli-workflow", "git", ["plan", "approve", "execute", "show"]], decision = "allow", justification = "Fixed executor requires a matching approved transaction and accepts no arbitrary command or repo path.")
+prefix_rule(pattern = ["role-cli-workflow", "workflow", ["preflight", "freeze-contract", "approve-contract-change", "freeze-sha"]], decision = "allow")
 '''
         repos = ", ".join(_toml_string(str(config.repo(item))) for item in ROLES)
         body += f'''fixed_repos = [{repos}]
@@ -212,15 +212,15 @@ prefix_rule(pattern = ["git", "-C", fixed_repos, ["add", "commit", "merge", "pus
     if role in {"implementer", "doc-curator"}:
         body = read + '''prefix_rule(pattern = ["git", ["add", "commit", "push"]], decision = "allow")
 prefix_rule(pattern = ["git", ["merge", "rebase", "cherry-pick", "tag"]], decision = "forbidden")
-prefix_rule(pattern = ["codex-role-workflow", "git", ["plan", "approve", "execute"]], decision = "forbidden")
-prefix_rule(pattern = ["codex-role-workflow", "workflow"], decision = "forbidden")
+prefix_rule(pattern = ["role-cli-workflow", "git", ["plan", "approve", "execute"]], decision = "forbidden")
+prefix_rule(pattern = ["role-cli-workflow", "workflow"], decision = "forbidden")
 '''
         for branch in config.protected_branches:
             body += f'prefix_rule(pattern = ["git", "push", "origin", {_toml_string(branch)}], decision = "forbidden")\n'
         return body
     return read + '''prefix_rule(pattern = ["git", ["add", "commit", "push", "merge", "rebase", "cherry-pick", "tag"]], decision = "forbidden")
-prefix_rule(pattern = ["codex-role-workflow", "git", ["plan", "approve", "execute"]], decision = "forbidden")
-prefix_rule(pattern = ["codex-role-workflow", "workflow"], decision = "forbidden")
+prefix_rule(pattern = ["role-cli-workflow", "git", ["plan", "approve", "execute"]], decision = "forbidden")
+prefix_rule(pattern = ["role-cli-workflow", "workflow"], decision = "forbidden")
 prefix_rule(pattern = ["git", "branch", ["-d", "-D", "--delete"]], decision = "forbidden")
 prefix_rule(pattern = ["git", "remote", ["add", "remove", "set-url", "rename"]], decision = "forbidden")
 '''
@@ -229,7 +229,7 @@ prefix_rule(pattern = ["git", "remote", ["add", "remove", "set-url", "rename"]],
 def _role_config(config: ProjectConfig, role: str) -> str:
     sandbox = "workspace-write" if role in {"supervisor", "implementer", "evaluator", "doc-curator"} else "read-only"
     approval = "on-request" if role == "supervisor" else "never"
-    text = f'developer_instructions = "CODEX_ROLE_WORKFLOW_CONFIG_PROBE:{role}"\nsandbox_mode = "{sandbox}"\napproval_policy = "{approval}"\n\n[features]\nmulti_agent = false\nmemories = false\n\n[sandbox_workspace_write]\nnetwork_access = true\n'
+    text = f'developer_instructions = "ROLE_CLI_WORKFLOW_CONFIG_PROBE:{role}"\nsandbox_mode = "{sandbox}"\napproval_policy = "{approval}"\n\n[features]\nmulti_agent = false\nmemories = false\n\n[sandbox_workspace_write]\nnetwork_access = true\n'
     if role == "supervisor":
         text += f'writable_roots = [{_toml_string(str(config.root))}]\n'
     return text
@@ -267,15 +267,15 @@ def _deploy_codex(config: ProjectConfig, role: str) -> None:
 
 def _role_script(config: ProjectConfig, role: str) -> str:
     return "#!/usr/bin/env bash\nset -euo pipefail\nexec " + " ".join(
-        shlex.quote(item) for item in (sys.executable, "-m", "codex_role_workflow.cli", "_role-launch", str(config.root), role)
+        shlex.quote(item) for item in (sys.executable, "-m", "role_cli_workflow.cli", "_role-launch", str(config.root), role)
     ) + "\n"
 
 
 def _server_script(config: ProjectConfig) -> str:
     return (
         "#!/usr/bin/env bash\nset -euo pipefail\n"
-        + "export CODEX_ROLE_WORKFLOW_PROJECT_ROOT=" + shlex.quote(str(config.root)) + "\n"
-        + "exec " + " ".join(shlex.quote(item) for item in (sys.executable, "-m", "codex_role_workflow.bridge.server")) + "\n"
+        + "export ROLE_CLI_WORKFLOW_PROJECT_ROOT=" + shlex.quote(str(config.root)) + "\n"
+        + "exec " + " ".join(shlex.quote(item) for item in (sys.executable, "-m", "role_cli_workflow.bridge.server")) + "\n"
     )
 
 

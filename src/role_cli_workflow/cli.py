@@ -19,9 +19,9 @@ from .refinement import RefinementError, WorkflowRefinementStore
 
 
 def _bridge_server(root: str, role: str | None = None) -> int:
-    os.environ["CODEX_ROLE_WORKFLOW_PROJECT_ROOT"] = str(Path(root).expanduser().resolve())
+    os.environ["ROLE_CLI_WORKFLOW_PROJECT_ROOT"] = str(Path(root).expanduser().resolve())
     if role:
-        os.environ["CODEX_ROLE_WORKFLOW_ROLE"] = role
+        os.environ["ROLE_CLI_WORKFLOW_ROLE"] = role
     from .bridge.server import main as server_main
     server_main()
     return 0
@@ -63,25 +63,25 @@ def _role_launch(root: str, role: str) -> int:
             raise LifecycleError(f"cli reasoning_effort is required by configured arguments for role: {role}")
         return [_expand_arg(item, substitutions) for item in items]
 
-    os.environ["CODEX_ROLE_WORKFLOW_PROJECT_ROOT"] = str(config.root)
-    os.environ["CODEX_ROLE_WORKFLOW_ROLE"] = role
+    os.environ["ROLE_CLI_WORKFLOW_PROJECT_ROOT"] = str(config.root)
+    os.environ["ROLE_CLI_WORKFLOW_ROLE"] = role
     os.environ.update({
-        "ROLE_WORKFLOW_PROJECT_ROOT": str(config.root),
-        "ROLE_WORKFLOW_REPO": str(config.repo(role)),
-        "ROLE_WORKFLOW_ROLE": role,
-        "ROLE_WORKFLOW_ROLE_INSTRUCTIONS": str(role_instructions),
-        "ROLE_WORKFLOW_MCP_COMMAND": str(bridge_command),
-        "ROLE_WORKFLOW_MCP_CWD": str(config.bridge_root),
-        "ROLE_WORKFLOW_MCP_ENABLED_TOOLS": ",".join(tools),
+        "ROLE_CLI_WORKFLOW_PROJECT_ROOT": str(config.root),
+        "ROLE_CLI_WORKFLOW_REPO": str(config.repo(role)),
+        "ROLE_CLI_WORKFLOW_ROLE": role,
+        "ROLE_CLI_WORKFLOW_ROLE_INSTRUCTIONS": str(role_instructions),
+        "ROLE_CLI_WORKFLOW_MCP_COMMAND": str(bridge_command),
+        "ROLE_CLI_WORKFLOW_MCP_CWD": str(config.bridge_root),
+        "ROLE_CLI_WORKFLOW_MCP_ENABLED_TOOLS": ",".join(tools),
     })
     if model is not None:
-        os.environ["ROLE_WORKFLOW_MODEL"] = model
+        os.environ["ROLE_CLI_WORKFLOW_MODEL"] = model
     else:
-        os.environ.pop("ROLE_WORKFLOW_MODEL", None)
+        os.environ.pop("ROLE_CLI_WORKFLOW_MODEL", None)
     if reasoning_effort is not None:
-        os.environ["ROLE_WORKFLOW_REASONING_EFFORT"] = reasoning_effort
+        os.environ["ROLE_CLI_WORKFLOW_REASONING_EFFORT"] = reasoning_effort
     else:
-        os.environ.pop("ROLE_WORKFLOW_REASONING_EFFORT", None)
+        os.environ.pop("ROLE_CLI_WORKFLOW_REASONING_EFFORT", None)
     if config.cli_provider == "generic":
         args = [binary, *expand(config.cli_args), *expand(config.role_cli_args.get(role, ()))]
         os.chdir(config.repo(role))
@@ -99,16 +99,16 @@ def _role_launch(root: str, role: str) -> int:
     for setting in ("multi_agent", "goals", "memories", "hooks", "plugins", "apps", "remote_plugin", "skill_mcp_dependency_install"):
         args += ["-c", f"features.{setting}=false"]
     args += [
-        "-c", f'mcp_servers.codex-role-workflow.command="{config.shared / "scripts" / "run_bridge_server.sh"}"',
-        "-c", "mcp_servers.codex-role-workflow.args=[]",
-        "-c", "mcp_servers.codex-role-workflow.enabled=true",
-        "-c", "mcp_servers.codex-role-workflow.required=true",
-        "-c", 'mcp_servers.codex-role-workflow.startup_timeout_sec=20.0',
-        "-c", 'mcp_servers.codex-role-workflow.tool_timeout_sec=55.0',
-        "-c", f'mcp_servers.codex-role-workflow.cwd="{config.bridge_root}"',
-        "-c", f'mcp_servers.codex-role-workflow.env.CODEX_ROLE_WORKFLOW_PROJECT_ROOT="{config.root}"',
-        "-c", f'mcp_servers.codex-role-workflow.env.CODEX_ROLE_WORKFLOW_ROLE="{role}"',
-        "-c", f"mcp_servers.codex-role-workflow.enabled_tools={enabled}",
+        "-c", f'mcp_servers.role-cli-workflow.command="{config.shared / "scripts" / "run_bridge_server.sh"}"',
+        "-c", "mcp_servers.role-cli-workflow.args=[]",
+        "-c", "mcp_servers.role-cli-workflow.enabled=true",
+        "-c", "mcp_servers.role-cli-workflow.required=true",
+        "-c", 'mcp_servers.role-cli-workflow.startup_timeout_sec=20.0',
+        "-c", 'mcp_servers.role-cli-workflow.tool_timeout_sec=55.0',
+        "-c", f'mcp_servers.role-cli-workflow.cwd="{config.bridge_root}"',
+        "-c", f'mcp_servers.role-cli-workflow.env.ROLE_CLI_WORKFLOW_PROJECT_ROOT="{config.root}"',
+        "-c", f'mcp_servers.role-cli-workflow.env.ROLE_CLI_WORKFLOW_ROLE="{role}"',
+        "-c", f"mcp_servers.role-cli-workflow.enabled_tools={enabled}",
     ]
     os.chdir(config.repo(role))
     os.execvpe(binary, args, os.environ)
@@ -123,7 +123,7 @@ def _expand_arg(value: str, substitutions: dict[str, str]) -> str:
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(prog="codex-role-workflow")
+    result = argparse.ArgumentParser(prog="role-cli-workflow")
     sub = result.add_subparsers(dest="command", required=True)
     init = sub.add_parser("init"); init.add_argument("project_root"); init.add_argument("--yes", action="store_true")
     for name in ("sync", "doctor", "open", "verify", "attach", "status", "stop"):

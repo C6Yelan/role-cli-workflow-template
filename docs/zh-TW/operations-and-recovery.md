@@ -2,7 +2,7 @@
 
 `shared_workspace/runtime/` 內的 JSON 是 runtime source of truth；
 `shared_workspace/workflow/` 內的 Markdown 是方便閱讀的投影。在判定角色或
-任務失敗前，先執行 `codex-role-workflow status <project-root>`。
+任務失敗前，先執行 `role-cli-workflow status <project-root>`。
 
 ## 常見狀態
 
@@ -32,9 +32,9 @@ callback 會帶上明確的 workflow、task、role 與終態。`DELIVERED` 只�
 ## 重新啟動 runtime
 
 ```bash
-codex-role-workflow stop ~/projects/NewProject
-codex-role-workflow doctor ~/projects/NewProject
-codex-role-workflow open ~/projects/NewProject
+role-cli-workflow stop ~/projects/NewProject
+role-cli-workflow doctor ~/projects/NewProject
+role-cli-workflow open ~/projects/NewProject
 ```
 
 停止 tmux runtime 不會刪除 worktrees、task state、results、decisions 或

@@ -1,10 +1,10 @@
 # 設定說明
 
-專案設定位於 `.codex-workflow/project.toml`。修改後執行：
+專案設定位於 `.role-cli-workflow/project.toml`。修改後執行：
 
 ```bash
-codex-role-workflow sync ~/projects/NewProject
-codex-role-workflow doctor ~/projects/NewProject
+role-cli-workflow sync ~/projects/NewProject
+role-cli-workflow doctor ~/projects/NewProject
 ```
 
 ## 模型設定

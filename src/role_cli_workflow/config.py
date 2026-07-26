@@ -42,7 +42,7 @@ class ProjectConfig:
 
     @property
     def metadata_dir(self) -> Path:
-        return self.root / ".codex-workflow"
+        return self.root / ".role-cli-workflow"
 
     @property
     def shared(self) -> Path:
@@ -81,7 +81,7 @@ class ProjectConfig:
 
 def load_project(root: str | Path) -> ProjectConfig:
     project_root = Path(root).expanduser().resolve()
-    path = project_root / ".codex-workflow" / "project.toml"
+    path = project_root / ".role-cli-workflow" / "project.toml"
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
         project = raw["project"]

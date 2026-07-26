@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from codex_role_workflow.bootstrap import init_project
-from codex_role_workflow.config import ROLES, load_project
+from role_cli_workflow.bootstrap import init_project
+from role_cli_workflow.config import ROLES, load_project
 
 
 def decision(repo: Path, command: list[str]) -> str:
@@ -41,21 +41,21 @@ def test_sandbox_and_git_matrix(project_root: Path) -> None:
     assert decision(supervisor, ["git", "status"]) == "allow"
     for subcommand in ("add", "commit", "merge", "push"):
         assert decision(supervisor, ["git", subcommand]) == "prompt"
-    assert decision(supervisor, ["codex-role-workflow", "git", "execute", str(project_root), "tx-1"]) == "allow"
+    assert decision(supervisor, ["role-cli-workflow", "git", "execute", str(project_root), "tx-1"]) == "allow"
     for role in ("implementer", "doc-curator"):
         repo = config.repo(role)
         for subcommand in ("add", "commit", "push"):
             assert decision(repo, ["git", subcommand]) == "allow"
         assert decision(repo, ["git", "merge"]) == "forbidden"
         assert decision(repo, ["git", "push", "origin", "trunk"]) == "forbidden"
-        assert decision(repo, ["codex-role-workflow", "git", "execute", str(project_root), "tx-1"]) == "forbidden"
+        assert decision(repo, ["role-cli-workflow", "git", "execute", str(project_root), "tx-1"]) == "forbidden"
     for role in ("explorer", "evaluator", "reviewer"):
         repo = config.repo(role)
         assert decision(repo, ["git", "fetch"]) == "allow"
         assert decision(repo, ["git", "pull", "--ff-only"]) == "allow"
         for subcommand in ("add", "commit", "push", "merge"):
             assert decision(repo, ["git", subcommand]) == "forbidden"
-        assert decision(repo, ["codex-role-workflow", "git", "execute", str(project_root), "tx-1"]) == "forbidden"
+        assert decision(repo, ["role-cli-workflow", "git", "execute", str(project_root), "tx-1"]) == "forbidden"
     for role in ROLES:
         repo = config.repo(role)
         assert decision(repo, ["git", "reset", "--hard"]) == "forbidden"

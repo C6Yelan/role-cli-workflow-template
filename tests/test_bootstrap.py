@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from codex_role_workflow.bootstrap import BootstrapError, init_project, sync_project
-from codex_role_workflow.config import ROLES, WORKERS, load_project
+from role_cli_workflow.bootstrap import BootstrapError, init_project, sync_project
+from role_cli_workflow.config import ROLES, WORKERS, load_project
 
 
 def digest(root: Path) -> str:
@@ -23,7 +23,7 @@ def digest(root: Path) -> str:
 def test_init_creates_fixed_layout_without_overwriting_main(project_root: Path) -> None:
     before = (project_root / "main/README.md").read_bytes()
     warnings = init_project(project_root, assume_yes=True)
-    assert "Sample project" in (project_root / ".codex-workflow/project_instructions.md").read_text()
+    assert "Sample project" in (project_root / ".role-cli-workflow/project_instructions.md").read_text()
     assert (project_root / "main/README.md").read_bytes() == before
     config = load_project(project_root)
     assert config.base_branch == "trunk"
@@ -52,7 +52,7 @@ def test_nonempty_role_directory_is_rejected(project_root: Path) -> None:
     with pytest.raises(BootstrapError, match="non-empty"):
         init_project(project_root, assume_yes=True)
     assert (target / "keep.txt").read_text() == "keep"
-    assert not (project_root / ".codex-workflow").exists()
+    assert not (project_root / ".role-cli-workflow").exists()
 
 
 def test_sync_is_idempotent_and_preserves_runtime_history(project_root: Path) -> None:
@@ -91,7 +91,7 @@ def test_unknown_project_facts_remain_todo(tmp_path: Path) -> None:
     subprocess.run(["git", "add", "file.txt"], cwd=main, check=True, shell=False)
     subprocess.run(["git", "commit", "-m", "initial"], cwd=main, check=True, capture_output=True, shell=False)
     warnings = init_project(root, assume_yes=True)
-    text = (root / ".codex-workflow/project_instructions.md").read_text()
+    text = (root / ".role-cli-workflow/project_instructions.md").read_text()
     assert "TECH_STACK_UNCONFIRMED" in warnings
     assert "PROJECT_PURPOSE_UNCONFIRMED" in warnings
     assert "TODO" in text

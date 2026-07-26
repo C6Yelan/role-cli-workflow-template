@@ -26,7 +26,7 @@ class ValidationError(ValueError):
 
 def validate_caller_role(role: str | None) -> str:
     if role not in CALLER_ROLES:
-        raise ValidationError("CODEX_ROLE_WORKFLOW_ROLE is invalid")
+        raise ValidationError("ROLE_CLI_WORKFLOW_ROLE is invalid")
     return role
 
 
@@ -64,7 +64,7 @@ def sha256_text(value: str) -> str:
 def toml_instruction_override(role: str) -> str:
     validate_caller_role(role)
     role_path = PROJECT_ROOT / "shared_workspace" / "roles" / f"{role}.md"
-    project_path = PROJECT_ROOT / ".codex-workflow" / "project_instructions.md"
+    project_path = PROJECT_ROOT / ".role-cli-workflow" / "project_instructions.md"
     try:
         content = role_path.read_text(encoding="utf-8") + "\n\n" + project_path.read_text(encoding="utf-8")
     except OSError as exc:
