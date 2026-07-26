@@ -12,6 +12,7 @@
 - Made callback wakeups task-specific and kept terminal task IDs visible in the workflow dashboard.
 - Added concise English and Traditional Chinese guides for setup, configuration, operations, and recovery.
 - Replaced fixed all-role dispatch with one set of execution profiles, an Implementer–Evaluator feedback loop, sequential evidence-based review, and conditional documentation work.
+- Enforced Evaluator and Reviewer verdict fields in Result Envelopes and normalized legacy preflight profiles at read time without restoring old CLI options.
 
 ## 0.1.3 — 2026-07-19
 

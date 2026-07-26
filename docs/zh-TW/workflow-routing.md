@@ -13,7 +13,8 @@ Supervisor 只選擇一個 execution profile。這個 profile 同時決定必要
 Evaluator 負責執行驗證與整理證據，回報 `PASS`、`FAIL` 或
 `NOT_VERIFIED`；失敗證據由 Supervisor 送回 Implementer。Reviewer 在相關
 驗證完成後，審查完整 diff、需求、設計、風險、可維護性、比例原則及證據
-是否充分，原則上不重跑完整驗證套件。
+是否充分，原則上不重跑完整驗證套件。Result Envelope 會拒絕缺少或無效的
+Evaluator／Reviewer verdict。
 
 公開 API、CLI 或 schema、跨模組或跨服務影響、安全與授權、migration 或
 不可逆操作、並行與生命週期或資源風險、驗證缺口、相容性風險、使用者明確
@@ -23,3 +24,6 @@ Reviewer。
 只有範圍有實質歧義或需要探索時才使用 Explorer。只有文件是交付內容，或
 公開行為、設定、部署、migration、runbook、正式 artifact index 有變更時，
 才使用 Doc Curator。
+
+0.2 以前的 preflight profile 只會在讀取時正規化，避免既有安全 Gate 靜默
+失效；這不會恢復已移除的 CLI 選項，也不會讓新 workflow 寫入舊欄位。

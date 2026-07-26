@@ -20,8 +20,11 @@ from .security import (
 SUGGESTED_ROLE_SECTIONS = {
     "explorer": ("requirements", "scope", "api_contract", "acceptance_criteria", "risks"),
     "implementer": ("changes", "tests", "deviations", "remaining_work"),
-    "evaluator": ("verdict", "test_evidence", "failures", "coverage_gaps"),
-    "reviewer": ("verdict", "findings", "required_fixes", "risks"),
+    "evaluator": ("validation_verdict", "test_evidence", "failures", "coverage_gaps"),
+    "reviewer": (
+        "review_mode", "correctness_verdict", "proportionality_verdict",
+        "findings", "required_fixes", "risks",
+    ),
     "doc-curator": ("final_summary", "decisions", "validation_summary", "open_items", "artifact_index"),
 }
 
@@ -127,10 +130,25 @@ def validate_result_envelope(
         raise ValidationError("decisions, open_issues, and evidence must be lists")
     if not isinstance(sections, dict) or any(not isinstance(key, str) for key in sections):
         raise ValidationError("sections must be a named object")
+    validated_role = validate_worker_role(role)
+    if validated_role == "evaluator":
+        verdict = sections.get("validation_verdict")
+        if not isinstance(verdict, str) or verdict not in {"PASS", "FAIL", "NOT_VERIFIED"}:
+            raise ValidationError("evaluator validation_verdict is invalid")
+    if validated_role == "reviewer":
+        correctness = sections.get("correctness_verdict")
+        proportionality = sections.get("proportionality_verdict")
+        if not isinstance(correctness, str) or correctness not in {"PASS", "FAIL"}:
+            raise ValidationError("reviewer correctness_verdict is invalid")
+        if (
+            not isinstance(proportionality, str)
+            or proportionality not in {"PROPORTIONATE", "OVERDESIGNED", "UNCERTAIN"}
+        ):
+            raise ValidationError("reviewer proportionality_verdict is invalid")
     envelope = {
         "workflow_id": validate_workflow_id(workflow_id),
         "task_id": validate_task_id(task_id),
-        "role": validate_worker_role(role),
+        "role": validated_role,
         "round": round_number,
         "nonce": validate_nonce(nonce),
         "summary": validate_text(summary, field="summary", maximum=MAX_PAYLOAD_BYTES),

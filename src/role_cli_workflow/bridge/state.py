@@ -40,7 +40,12 @@ from .security import (
     validate_workflow_id,
 )
 from .tmux_client import TmuxClient, TmuxError
-from ..refinement import EVENT_KINDS, SEMANTIC_REPAIR_EVENTS, event_metric
+from ..refinement import (
+    EVENT_KINDS,
+    SEMANTIC_REPAIR_EVENTS,
+    event_metric,
+    resolve_execution_profile,
+)
 
 METADATA_DIR = RUNTIME_ROOT / "metadata"
 ACTIVE_TASKS_PATH = METADATA_DIR / "active-tasks.json"
@@ -190,7 +195,7 @@ class TaskStore:
         if not preflight_path.exists():
             return invariant
         preflight = self._read_json(preflight_path, "preflight metadata")
-        if preflight.get("execution_profile") != "FULL":
+        if resolve_execution_profile(preflight) != "FULL":
             return invariant
         if not invariant:
             raise ValidationError("FULL semantic rework requires invariant_type")
@@ -449,7 +454,7 @@ class TaskStore:
         if kind == "preflight":
             sections = {
                 "summary": {
-                    "execution_profile": payload.get("execution_profile"),
+                    "execution_profile": resolve_execution_profile(payload),
                     "execution_reason": payload.get("execution_reason"),
                     "execution_triggers": payload.get("execution_triggers", []),
                     "unresolved_preflight_items": payload.get("unresolved_preflight_items", []),

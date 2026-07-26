@@ -15,7 +15,8 @@ or `NOT_VERIFIED`; failed evidence returns through Supervisor to Implementer.
 Reviewer runs after relevant validation and judges the complete diff,
 requirements, design, risk, maintainability, proportionality, and whether the
 evidence is sufficient. Reviewer normally does not rerun the full validation
-suite.
+suite. Result Envelopes reject missing or invalid Evaluator and Reviewer
+verdicts.
 
 Reviewer is required for public API, CLI, or schema changes; cross-module or
 cross-service impact; security and authorization; migrations or irreversible
@@ -26,3 +27,7 @@ the complete diff from the available evidence.
 Explorer is conditional on material ambiguity or discovery needs. Doc Curator
 is conditional on documentation deliverables or changes to public behavior,
 configuration, deployment, migration, runbooks, or formal artifact indexes.
+
+Pre-0.2 preflight profiles are normalized when read so existing safety Gates
+remain active. This does not restore removed CLI options or write legacy fields
+into new workflows.

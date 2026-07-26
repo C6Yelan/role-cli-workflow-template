@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
+import pytest
+
 from role_cli_workflow.bootstrap import init_project
 from role_cli_workflow.bridge.models import RoleConfig
 from role_cli_workflow.config import load_project
@@ -172,3 +174,20 @@ def test_verify_rework_skips_full_semantic_gate(
     assert store._semantic_repair_checkpoint(
         "wf-verify", "IMPLEMENTATION_REVISION", ""
     ) == ""
+
+
+def test_legacy_full_rework_keeps_semantic_gate(
+    project_root: Path, monkeypatch
+) -> None:
+    init_project(project_root, assume_yes=True)
+    store = store_for(project_root, monkeypatch, caller="supervisor", tmux=FakeTmux())
+    preflight = store._refinement_path("wf-legacy-full", "preflight.json")
+    store._write_json(
+        preflight,
+        {"workflow_id": "wf-legacy-full", "profile": "CONTRACT_SENSITIVE"},
+    )
+    security = importlib.import_module("role_cli_workflow.bridge.security")
+    with pytest.raises(security.ValidationError, match="FULL semantic rework requires invariant_type"):
+        store._semantic_repair_checkpoint(
+            "wf-legacy-full", "IMPLEMENTATION_REVISION", ""
+        )

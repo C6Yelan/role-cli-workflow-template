@@ -13,6 +13,7 @@ from role_cli_workflow.refinement import (
     RefinementError,
     WorkflowRefinementStore,
     classify_execution_profile,
+    resolve_execution_profile,
 )
 
 
@@ -98,6 +99,16 @@ def test_explicit_facts_promote_only_high_impact_cases_to_full() -> None:
         assert classify_execution_profile({trigger: True}) == "FULL"
 
 
+def test_legacy_execution_profiles_are_normalized_without_changing_current_values() -> None:
+    assert resolve_execution_profile({"execution_profile": "REVIEW"}) == "REVIEW"
+    assert resolve_execution_profile({"profile": "STANDARD"}) == "VERIFY"
+    assert resolve_execution_profile({"task_profile": "CONTRACT_SENSITIVE"}) == "FULL"
+    assert resolve_execution_profile({"profile": "UNKNOWN"}) == "UNSET"
+    assert resolve_execution_profile({
+        "execution_profile": "UNKNOWN", "profile": "CONTRACT_SENSITIVE"
+    }) == "UNSET"
+
+
 def test_refinement_cli_defaults_verify_and_exposes_authority_assembly() -> None:
     preflight_args = parser().parse_args([
         "workflow", "preflight", "/tmp/project", "wf-1", "--target-role", "explorer",
@@ -170,6 +181,19 @@ def test_contract_freezes_only_required_now_and_optional_fields_are_optional(pro
     assert "publication_lifecycle" not in frozen["contract"]
     assert frozen["advisory"]["optional_hardening"]
     assert frozen["advisory"]["deferred"]
+
+
+def test_contract_freeze_accepts_legacy_full_preflight(project_root: Path) -> None:
+    init_project(project_root, assume_yes=True)
+    store = WorkflowRefinementStore(load_project(project_root))
+    preflight(store)
+    path = store._path("wf-contract-1", "preflight.json")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload.pop("execution_profile")
+    payload["profile"] = "CONTRACT_SENSITIVE"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    frozen = store.freeze_contract("wf-contract-1", required_contract(), "approved")
+    assert frozen["status"] == "CONTRACT_FROZEN"
 
 
 def test_negative_tests_must_reference_a_critical_invariant(project_root: Path) -> None:

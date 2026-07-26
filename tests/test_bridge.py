@@ -4,6 +4,8 @@ import importlib
 import os
 from pathlib import Path
 
+import pytest
+
 from role_cli_workflow.bootstrap import init_project
 
 
@@ -28,6 +30,69 @@ def test_bridge_uses_generic_trigger_and_task_contract(project_root: Path, monke
     assert "ROLE_CLI_WORKFLOW_TASK_AVAILABLE" in state.TASK_TRIGGER
     assert len(state.TASK_TRIGGER) < 256
     assert "objective" not in state.TASK_TRIGGER
+
+
+@pytest.mark.parametrize(
+    ("role", "sections"),
+    [
+        ("evaluator", {}),
+        ("evaluator", {"validation_verdict": "UNKNOWN"}),
+        ("reviewer", {"proportionality_verdict": "PROPORTIONATE"}),
+        ("reviewer", {"correctness_verdict": "PASS"}),
+        (
+            "reviewer",
+            {
+                "correctness_verdict": "PASS",
+                "proportionality_verdict": "TOO_COMPLEX",
+            },
+        ),
+    ],
+)
+def test_result_envelope_rejects_invalid_role_verdicts(
+    project_root: Path,
+    monkeypatch,
+    role: str,
+    sections: dict[str, object],
+) -> None:
+    init_project(project_root, assume_yes=True)
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_PROJECT_ROOT", str(project_root))
+    contracts = importlib.import_module("role_cli_workflow.bridge.contracts")
+    security = importlib.import_module("role_cli_workflow.bridge.security")
+    with pytest.raises(security.ValidationError, match="verdict is invalid"):
+        contracts.validate_result_envelope(
+            "wf-verdict", role, f"task-{role}", 0, "0" * 32, "Result",
+            [], [], [], sections, [], {},
+        )
+
+
+@pytest.mark.parametrize(
+    ("role", "sections"),
+    [
+        ("evaluator", {"validation_verdict": "NOT_VERIFIED"}),
+        (
+            "reviewer",
+            {
+                "review_mode": "DESIGN_PRECHECK",
+                "correctness_verdict": "PASS",
+                "proportionality_verdict": "UNCERTAIN",
+            },
+        ),
+    ],
+)
+def test_result_envelope_accepts_valid_role_verdicts(
+    project_root: Path,
+    monkeypatch,
+    role: str,
+    sections: dict[str, object],
+) -> None:
+    init_project(project_root, assume_yes=True)
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_PROJECT_ROOT", str(project_root))
+    contracts = importlib.import_module("role_cli_workflow.bridge.contracts")
+    envelope = contracts.validate_result_envelope(
+        "wf-verdict", role, f"task-{role}", 0, "0" * 32, "Result",
+        [], [], [], sections, [], {},
+    )
+    assert envelope["sections"] == sections
 
 
 def test_send_rework_exposes_existing_semantic_checkpoint_field(project_root: Path, monkeypatch) -> None:

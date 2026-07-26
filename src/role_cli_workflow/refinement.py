@@ -121,6 +121,18 @@ class RefinementError(RuntimeError):
     """Invalid or inconsistent refinement metadata."""
 
 
+def resolve_execution_profile(preflight: dict[str, Any]) -> str:
+    """Read the current profile while preserving safety for pre-0.2 metadata."""
+    current = preflight.get("execution_profile")
+    if current is not None:
+        return str(current) if current in EXECUTION_PROFILES else "UNSET"
+    legacy = preflight.get("profile") or preflight.get("task_profile")
+    return {
+        "STANDARD": "VERIFY",
+        "CONTRACT_SENSITIVE": "FULL",
+    }.get(legacy, "UNSET")
+
+
 def classify_execution_profile(facts: dict[str, bool]) -> str:
     """Promote explicit high-impact facts; this intentionally does not inspect task prose."""
     if not isinstance(facts, dict) or any(not isinstance(key, str) or not isinstance(value, bool) for key, value in facts.items()):
@@ -347,14 +359,17 @@ class WorkflowRefinementStore:
         return payload
 
     def _project_preflight(self, payload: dict[str, Any]) -> None:
+        profile = resolve_execution_profile(payload)
+        reason = payload.get("execution_reason") or payload.get("profile_reason")
+        triggers = payload.get("execution_triggers", payload.get("profile_triggers", []))
         lines = [
             "# Workflow Preflight",
             "",
             f"- Workflow ID: `{payload['workflow_id']}`",
-            f"- Execution profile: `{payload['execution_profile']}`",
-            f"- Execution reason: {payload['execution_reason']}",
+            f"- Execution profile: `{profile}`",
+            f"- Execution reason: {reason or 'Unavailable'}",
             "- Execution triggers: " + (
-                ", ".join(f"`{item}`" for item in payload.get("execution_triggers", [])) or "None"
+                ", ".join(f"`{item}`" for item in triggers) or "None"
             ),
             f"- Effective PLAN revision: `{payload.get('effective_plan_revision', 'UNSET')}`",
             f"- Effective contract revision: `{payload.get('effective_contract_revision', 'UNSET')}`",
@@ -396,7 +411,7 @@ class WorkflowRefinementStore:
 
     def freeze_contract(self, workflow_id: str, contract: dict[str, Any], approval_summary: str) -> dict[str, Any]:
         preflight = _read_json(self._path(workflow_id, "preflight.json"))
-        if preflight.get("execution_profile") != "FULL":
+        if resolve_execution_profile(preflight) != "FULL":
             raise RefinementError("contract freeze requires FULL execution profile")
         frozen_contract, advisory = _contract_projection(contract)
         path = self._path(workflow_id, "contract-freeze.json")

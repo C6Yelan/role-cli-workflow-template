@@ -12,6 +12,7 @@ from .contracts import SUGGESTED_ROLE_SECTIONS, canonical_json
 from .models import TaskRecord
 from .security import validate_decision_id, validate_workflow_id
 from .config import WORKFLOW_ROOT
+from ..refinement import resolve_execution_profile
 
 ROLE_DOCUMENTS = {
     "explorer": "plan.md",
@@ -326,7 +327,7 @@ class WorkflowDocuments:
             except (OSError, json.JSONDecodeError):
                 preflight = {}
             index[6:6] = [
-                f"- Execution profile: `{preflight.get('execution_profile', 'UNSET')}`",
+                f"- Execution profile: `{resolve_execution_profile(preflight)}`",
                 f"- Execution reason: {preflight.get('execution_reason', 'Unavailable')}",
                 "- Execution triggers: " + (
                     ", ".join(preflight.get("execution_triggers", [])) or "None"
