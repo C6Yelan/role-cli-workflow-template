@@ -180,6 +180,8 @@ class GitTransactionStore:
             raise GitTransactionError("commit requires add in the same transaction")
         if "push" in operations and "commit" not in operations:
             raise GitTransactionError("push requires commit in the same transaction")
+        if "commit" in operations and not commit_message.strip():
+            raise GitTransactionError("commit message is required")
         if not explicit_files:
             raise GitTransactionError("explicit file list is required")
         files = [_relative_file(item) for item in explicit_files]
@@ -565,6 +567,13 @@ class GitTransactionStore:
             None,
         )
 
+    @staticmethod
+    def _mark_integration_push_completed(
+        payload: dict[str, Any], plan: dict[str, Any]
+    ) -> None:
+        payload["partial_state"] = "PUSH_COMPLETED"
+        payload["remote_ref"] = f"{plan['remote']}/{plan['destination_ref']}"
+
     def _execute_integration(
         self,
         path: Path,
@@ -649,53 +658,105 @@ class GitTransactionStore:
                 payload["partial_state"], payload["last_error"] = "PUSH_FAILED", error
                 _atomic(path, payload)
                 raise GitTransactionError("Git transaction stopped before push")
-            if remote_head != plan["remote_head_sha"]:
+            if remote_head == merge_sha:
+                self._mark_integration_push_completed(payload, plan)
+                state = "PUSH_COMPLETED"
+            elif remote_head != plan["remote_head_sha"]:
                 self._invalidate(path, payload, "destination ref changed")
                 raise GitTransactionError(
                     "transaction invalidated: destination ref changed"
                 )
-            if remote_head and git(
+            elif remote_head and git(
                 repo, "merge-base", "--is-ancestor", remote_head, merge_sha, check=False
             ).returncode:
                 self._invalidate(path, payload, "push is not fast-forward")
                 raise GitTransactionError(
                     "transaction invalidated: push is not fast-forward"
                 )
-            result = git(
-                repo,
-                "push",
-                str(plan["remote"]),
-                f"{merge_sha}:{plan['destination_ref']}",
-                check=False,
-            )
-            if result.returncode:
-                current_remote, _ = self._remote_head(repo, plan)
-                if current_remote != plan["remote_head_sha"] or "non-fast-forward" in (
-                    result.stdout + result.stderr
-                ):
-                    self._invalidate(
-                        path, payload, "push requires drift or non-fast-forward override"
-                    )
-                    raise GitTransactionError(
-                        "transaction invalidated: push requires non-fast-forward override"
-                    )
-                payload["partial_state"], payload["last_error"] = (
-                    "PUSH_FAILED",
-                    "git push failed",
+            if state != "PUSH_COMPLETED":
+                result = git(
+                    repo,
+                    "push",
+                    str(plan["remote"]),
+                    f"{merge_sha}:{plan['destination_ref']}",
+                    check=False,
                 )
-                _atomic(path, payload)
-                raise GitTransactionError("Git transaction stopped after push failure")
-            pushed_head, error = self._remote_head(repo, plan)
-            if error or pushed_head != merge_sha:
-                payload["partial_state"], payload["last_error"] = (
-                    "PUSH_FAILED",
-                    error or "pushed ref did not match the merge result",
-                )
-                _atomic(path, payload)
-                raise GitTransactionError("Git transaction push could not be verified")
-            payload["partial_state"] = "PUSH_COMPLETED"
-            payload["remote_ref"] = f"{plan['remote']}/{plan['destination_ref']}"
-            state = "PUSH_COMPLETED"
+                if result.returncode:
+                    output = (result.stdout + result.stderr).lower()
+                    if any(
+                        marker in output
+                        for marker in (
+                            "non-fast-forward",
+                            "fetch first",
+                            "needs force",
+                            "requires force",
+                        )
+                    ):
+                        self._invalidate(
+                            path,
+                            payload,
+                            "push requires non-fast-forward or force override",
+                        )
+                        raise GitTransactionError(
+                            "transaction invalidated: push requires non-fast-forward override"
+                        )
+                    current_remote, probe_error = self._remote_head(repo, plan)
+                    if probe_error:
+                        payload["partial_state"], payload["last_error"] = (
+                            "PUSH_FAILED",
+                            "push failed and remote ref could not be inspected",
+                        )
+                        _atomic(path, payload)
+                        raise GitTransactionError(
+                            "Git transaction stopped after push failure"
+                        )
+                    if current_remote == merge_sha:
+                        self._mark_integration_push_completed(payload, plan)
+                        state = "PUSH_COMPLETED"
+                    elif current_remote == plan["remote_head_sha"]:
+                        payload["partial_state"], payload["last_error"] = (
+                            "PUSH_FAILED",
+                            "git push failed",
+                        )
+                        _atomic(path, payload)
+                        raise GitTransactionError(
+                            "Git transaction stopped after push failure"
+                        )
+                    else:
+                        self._invalidate(path, payload, "destination ref changed")
+                        raise GitTransactionError(
+                            "transaction invalidated: destination ref changed"
+                        )
+                else:
+                    pushed_head, error = self._remote_head(repo, plan)
+                    if error:
+                        payload["partial_state"], payload["last_error"] = (
+                            "PUSH_FAILED",
+                            error,
+                        )
+                        _atomic(path, payload)
+                        raise GitTransactionError(
+                            "Git transaction push could not be verified"
+                        )
+                    if pushed_head == merge_sha:
+                        self._mark_integration_push_completed(payload, plan)
+                        state = "PUSH_COMPLETED"
+                    elif pushed_head == plan["remote_head_sha"]:
+                        payload["partial_state"], payload["last_error"] = (
+                            "PUSH_FAILED",
+                            "pushed ref did not advance to the merge result",
+                        )
+                        _atomic(path, payload)
+                        raise GitTransactionError(
+                            "Git transaction push could not be verified"
+                        )
+                    else:
+                        self._invalidate(
+                            path, payload, "destination ref changed after push"
+                        )
+                        raise GitTransactionError(
+                            "transaction invalidated: destination ref changed"
+                        )
 
         terminal = (
             plan["operations"] == ["merge"] and state == "MERGE_COMPLETED"

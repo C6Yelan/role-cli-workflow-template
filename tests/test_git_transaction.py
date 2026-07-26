@@ -106,6 +106,49 @@ def test_add_commit_subset_does_not_push(project_root: Path, tmp_path: Path, mon
     assert not run("git", "ls-remote", "origin", "refs/heads/feature/transaction", cwd=repo).stdout
 
 
+def test_add_only_transaction_allows_empty_commit_message(
+    project_root: Path, tmp_path: Path, monkeypatch
+) -> None:
+    store, _ = setup_transaction_repo(project_root, tmp_path)
+    make_change(project_root / "main")
+    created = store.create_plan(
+        transaction_id="tx-add",
+        workflow_id="wf-1",
+        task_id="task-1",
+        repo_id="main",
+        operations=["add"],
+        explicit_files=["README.md"],
+        commit_message="",
+    )
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_ROLE", "supervisor")
+    store.approve("tx-add", "approved displayed tx-add plan")
+    result = store.execute("tx-add")
+    assert created["plan"]["commit_message"] == ""
+    assert result["partial_state"] == "ADD_COMPLETED"
+
+
+@pytest.mark.parametrize("commit_message", ["", "   \t"])
+def test_commit_transaction_rejects_blank_commit_message_before_plan_write(
+    project_root: Path, tmp_path: Path, commit_message: str
+) -> None:
+    store, repo = setup_transaction_repo(project_root, tmp_path)
+    make_change(repo)
+    before = run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip()
+    with pytest.raises(GitTransactionError, match="commit message"):
+        store.create_plan(
+            transaction_id="tx-blank-message",
+            workflow_id="wf-1",
+            task_id="task-1",
+            repo_id="main",
+            operations=["add", "commit"],
+            explicit_files=["README.md"],
+            commit_message=commit_message,
+        )
+    assert not store._path("tx-blank-message").exists()
+    assert run("git", "rev-parse", "HEAD", cwd=repo).stdout.strip() == before
+    assert run("git", "diff", "--cached", "--name-only", cwd=repo).stdout == ""
+
+
 def test_transaction_rejects_protected_secret_and_worker(project_root: Path, tmp_path: Path, monkeypatch) -> None:
     store, repo = setup_transaction_repo(project_root, tmp_path)
     make_change(repo)
@@ -408,6 +451,126 @@ def test_integration_push_failure_resumes_without_remerging(
     assert result["partial_state"] == "PUSH_COMPLETED"
     assert result["merge_sha"] == merge_sha
     assert calls == {"merge": 1, "push": 2}
+
+
+def test_integration_push_and_probe_network_failure_remains_retryable(
+    project_root: Path, tmp_path: Path, monkeypatch
+) -> None:
+    store, _, _ = setup_integration_repo(project_root, tmp_path)
+    integration_plan(store, ["merge", "push"])
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_ROLE", "supervisor")
+    store.approve("tx-integration", "approved displayed tx-integration plan")
+    import role_cli_workflow.git_transaction as module
+    original = module.git
+    calls = {"merge": 0, "push": 0}
+    push_failed = False
+
+    def network_failure(repo_path: Path, *arguments: str, check: bool = True):
+        nonlocal push_failed
+        if arguments and arguments[0] == "merge":
+            calls["merge"] += 1
+        if arguments and arguments[0] == "push":
+            calls["push"] += 1
+            push_failed = True
+            return subprocess.CompletedProcess(["git"], 1, "", "network unavailable")
+        if arguments and arguments[0] == "ls-remote" and push_failed:
+            return subprocess.CompletedProcess(["git"], 1, "", "network unavailable")
+        return original(repo_path, *arguments, check=check)
+
+    monkeypatch.setattr(module, "git", network_failure)
+    with pytest.raises(GitTransactionError, match="push failure"):
+        store.execute("tx-integration")
+    assert store.show("tx-integration")["partial_state"] == "PUSH_FAILED"
+    with pytest.raises(GitTransactionError, match="before push"):
+        store.execute("tx-integration")
+    assert store.show("tx-integration")["partial_state"] == "PUSH_FAILED"
+    assert calls == {"merge": 1, "push": 1}
+
+
+def test_integration_recovery_accepts_push_that_succeeded_before_probe_failure(
+    project_root: Path, tmp_path: Path, monkeypatch
+) -> None:
+    store, _, _ = setup_integration_repo(project_root, tmp_path)
+    integration_plan(store, ["merge", "push"])
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_ROLE", "supervisor")
+    store.approve("tx-integration", "approved displayed tx-integration plan")
+    import role_cli_workflow.git_transaction as module
+    original = module.git
+    calls = {"merge": 0, "push": 0}
+    fail_verification = False
+
+    def verification_failure(repo_path: Path, *arguments: str, check: bool = True):
+        nonlocal fail_verification
+        if arguments and arguments[0] == "merge":
+            calls["merge"] += 1
+        if arguments and arguments[0] == "push":
+            calls["push"] += 1
+            result = original(repo_path, *arguments, check=check)
+            fail_verification = True
+            return result
+        if arguments and arguments[0] == "ls-remote" and fail_verification:
+            fail_verification = False
+            return subprocess.CompletedProcess(["git"], 1, "", "network unavailable")
+        return original(repo_path, *arguments, check=check)
+
+    monkeypatch.setattr(module, "git", verification_failure)
+    with pytest.raises(GitTransactionError, match="could not be verified"):
+        store.execute("tx-integration")
+    assert store.show("tx-integration")["partial_state"] == "PUSH_FAILED"
+    result = store.execute("tx-integration")
+    assert result["partial_state"] == "PUSH_COMPLETED"
+    assert result["consumed"] is True
+    assert calls == {"merge": 1, "push": 1}
+
+
+def test_integration_recovery_invalidates_other_remote_sha_without_remerging(
+    project_root: Path, tmp_path: Path, monkeypatch
+) -> None:
+    store, repo, _ = setup_integration_repo(project_root, tmp_path)
+    integration_plan(store, ["merge", "push"])
+    monkeypatch.setenv("ROLE_CLI_WORKFLOW_ROLE", "supervisor")
+    store.approve("tx-integration", "approved displayed tx-integration plan")
+    import role_cli_workflow.git_transaction as module
+    original = module.git
+    calls = {"merge": 0, "push": 0}
+
+    def fail_first_push(repo_path: Path, *arguments: str, check: bool = True):
+        if arguments and arguments[0] == "merge":
+            calls["merge"] += 1
+        if arguments and arguments[0] == "push":
+            calls["push"] += 1
+            if calls["push"] == 1:
+                return subprocess.CompletedProcess(["git"], 1, "", "temporary failure")
+        return original(repo_path, *arguments, check=check)
+
+    monkeypatch.setattr(module, "git", fail_first_push)
+    with pytest.raises(GitTransactionError, match="push failure"):
+        store.execute("tx-integration")
+    merge_sha = store.show("tx-integration")["merge_sha"]
+    tree = run("git", "rev-parse", f"{merge_sha}^{{tree}}", cwd=repo).stdout.strip()
+    other_sha = run(
+        "git", "commit-tree", tree, "-p", merge_sha, "-m", "remote drift", cwd=repo
+    ).stdout.strip()
+    run(
+        "git",
+        "push",
+        "origin",
+        f"{other_sha}:refs/heads/remote-drift",
+        cwd=repo,
+    )
+    run(
+        "git",
+        "--git-dir",
+        str(tmp_path / "remote.git"),
+        "update-ref",
+        "refs/heads/trunk",
+        other_sha,
+        cwd=tmp_path,
+    )
+    with pytest.raises(GitTransactionError, match="destination ref changed"):
+        store.execute("tx-integration")
+    assert store.show("tx-integration")["partial_state"] == "INVALIDATED"
+    assert calls == {"merge": 1, "push": 1}
 
 
 def test_integration_plan_rejects_unlisted_operations(
