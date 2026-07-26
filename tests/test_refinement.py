@@ -198,12 +198,34 @@ def test_preflight_uses_one_execution_profile_and_matching_order(project_root: P
     assert "Effective PLAN revision" in projection
 
 
-def test_preflight_reclassification_preserves_authority_summary(
+def test_preflight_reclassification_resets_summary_before_authority_assembly(
     project_root: Path,
 ) -> None:
     init_project(project_root, assume_yes=True)
     store = WorkflowRefinementStore(load_project(project_root))
-    preflight(store, "REVIEW")
+    review = preflight(store, "REVIEW")
+    store._update_preflight_summary(
+        "wf-contract-1",
+        effective_plan_revision="stale-plan",
+        effective_contract_revision=2,
+        effective_decision_refs=["decision:stale"],
+        semantic_repair_count=1,
+        proportionality_verdict="PROPORTIONATE",
+    )
+
+    updated = preflight(store, "VERIFY")
+
+    assert updated["execution_profile"] == "VERIFY"
+    assert "REVIEWER_AFTER_EVIDENCE" not in updated["workflow_order"]
+    assert updated["created_at"] == review["created_at"]
+    assert updated["effective_plan_revision"] is None
+    assert updated["effective_contract_revision"] is None
+    assert updated["effective_decision_refs"] == []
+    assert updated["semantic_repair_count"] == 0
+    assert updated["proportionality_verdict"] == "UNCERTAIN"
+    assert "profile" not in updated
+    assert "task_profile" not in updated
+
     store.set_effective_authority(
         "wf-contract-1",
         plan_revision="approved-plan-r1",
@@ -215,24 +237,12 @@ def test_preflight_reclassification_preserves_authority_summary(
             "approved_at": "2026-07-26T00:00:00Z",
         }],
     )
-    store._update_preflight_summary(
-        "wf-contract-1",
-        effective_contract_revision=2,
-        semantic_repair_count=1,
-        proportionality_verdict="PROPORTIONATE",
+    projected = json.loads(
+        store._path("wf-contract-1", "preflight.json").read_text(encoding="utf-8")
     )
-
-    updated = preflight(store, "VERIFY")
-
-    assert updated["execution_profile"] == "VERIFY"
-    assert "REVIEWER_AFTER_EVIDENCE" not in updated["workflow_order"]
-    assert updated["effective_plan_revision"] == "approved-plan-r1"
-    assert updated["effective_contract_revision"] == 2
-    assert updated["effective_decision_refs"] == ["decision:approved-plan"]
-    assert updated["semantic_repair_count"] == 1
-    assert updated["proportionality_verdict"] == "PROPORTIONATE"
-    assert "profile" not in updated
-    assert "task_profile" not in updated
+    assert projected["effective_plan_revision"] == "approved-plan-r1"
+    assert projected["effective_contract_revision"] is None
+    assert projected["effective_decision_refs"] == ["decision:approved-plan"]
 
 
 def test_full_requires_specific_reason_and_real_trigger(project_root: Path) -> None:

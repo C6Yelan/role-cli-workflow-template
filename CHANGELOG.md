@@ -18,7 +18,7 @@
 - Kept legacy authority warnings visible in status while suppressing repeated dispatch warnings for the same workflow without adding acknowledgement state.
 - Increased the single tmux trigger submission delay to reduce the chance that Enter arrives before the CLI composer finishes processing the paste.
 - Required Supervisor to reassess analysis-stage `REVIEW` after an approved Explorer PLAN and downgrade bounded internal no-consumer implementation to `VERIFY` when no review trigger remains.
-- Preserved existing authority and proportionality summary fields when fixed preflight metadata is rerun for profile reassessment.
+- Made profile reassessment rerun preflight before downstream authority assembly, preserving only the original creation time and letting the fixed `set-authority` flow project current authority afterward.
 
 ## 0.1.3 — 2026-07-19
 
