@@ -10,6 +10,11 @@ import pytest
 from role_cli_workflow.bootstrap import init_project
 from role_cli_workflow.config import ROLES, load_project
 
+pytestmark = pytest.mark.skipif(
+    shutil.which("codex") is None,
+    reason="Codex execpolicy binary is unavailable",
+)
+
 
 def decision(repo: Path, command: list[str]) -> str:
     codex = shutil.which("codex")
