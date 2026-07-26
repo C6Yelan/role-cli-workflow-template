@@ -318,7 +318,8 @@ class WorkflowRefinementStore:
                 raise RefinementError(f"{label} is invalid")
         now = _now()
         existing_path = self._path(workflow_id, "preflight.json")
-        created_at = _read_json(existing_path).get("created_at", now) if existing_path.exists() else now
+        existing = _read_json(existing_path) if existing_path.exists() else {}
+        created_at = existing.get("created_at", now)
         repo_id = "main" if target_role == "supervisor" else target_role
         payload = {
             "workflow_id": _safe_id(workflow_id, "workflow_id"),
@@ -345,11 +346,11 @@ class WorkflowRefinementStore:
             "stable_artifact_path": _relative_path(stable_artifact_path, "stable artifact path") if stable_artifact_path else "",
             "expected_git_handoff": expected_git_handoff,
             "unresolved_preflight_items": _string_list(unresolved_items, "unresolved preflight items"),
-            "effective_plan_revision": None,
-            "effective_contract_revision": None,
-            "effective_decision_refs": [],
-            "semantic_repair_count": 0,
-            "proportionality_verdict": "UNCERTAIN",
+            "effective_plan_revision": existing.get("effective_plan_revision"),
+            "effective_contract_revision": existing.get("effective_contract_revision"),
+            "effective_decision_refs": existing.get("effective_decision_refs", []),
+            "semantic_repair_count": existing.get("semantic_repair_count", 0),
+            "proportionality_verdict": existing.get("proportionality_verdict", "UNCERTAIN"),
             "created_at": created_at,
             "last_updated_at": now,
         }

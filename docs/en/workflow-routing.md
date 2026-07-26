@@ -32,6 +32,22 @@ Explorer is conditional on material ambiguity or discovery needs. Doc Curator
 is conditional on documentation deliverables or changes to public behavior,
 configuration, deployment, migration, runbooks, or formal artifact indexes.
 
+`REVIEW` may be a temporary analysis-stage classification when Explorer is
+needed only to resolve scope. After the Explorer PLAN is approved, Supervisor
+reassesses the remaining implementation before dispatching Implementer. A
+bounded, internal, reversible or rebuildable change with executable acceptance
+criteria and no public, external, cross-system, security/private-data, or other
+production consumer trigger is downgraded to `VERIFY`; using Explorer earlier
+does not by itself require Reviewer.
+
+If a concrete review trigger remains—such as a production API/CLI/schema
+consumer, non-local module impact, security or private-data boundary,
+migration, compatibility, concurrency/lifecycle/resource risk, validation
+gap, explicit review request, or a Completion Gate requiring Review or
+Prune—`REVIEW` remains. A downgrade reruns the fixed preflight command with
+`--execution-profile VERIFY` before downstream authority assembly and
+Implementer dispatch, reusing resolved repository and handoff facts.
+
 Pre-0.2 preflight profiles are normalized when read so existing safety Gates
 remain active. This does not restore removed CLI options or write legacy fields
 into new workflows.

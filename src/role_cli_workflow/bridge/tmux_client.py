@@ -11,7 +11,7 @@ from .config import TMUX_SOCKET
 from .models import RoleConfig
 
 TMUX_BIN = "tmux"
-SUBMISSION_DELAY_SECONDS = 0.250
+SUBMISSION_DELAY_SECONDS = 0.750
 
 
 class TmuxError(RuntimeError):

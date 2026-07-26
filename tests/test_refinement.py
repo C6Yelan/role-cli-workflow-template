@@ -198,6 +198,43 @@ def test_preflight_uses_one_execution_profile_and_matching_order(project_root: P
     assert "Effective PLAN revision" in projection
 
 
+def test_preflight_reclassification_preserves_authority_summary(
+    project_root: Path,
+) -> None:
+    init_project(project_root, assume_yes=True)
+    store = WorkflowRefinementStore(load_project(project_root))
+    preflight(store, "REVIEW")
+    store.set_effective_authority(
+        "wf-contract-1",
+        plan_revision="approved-plan-r1",
+        plan_projection={"rules": []},
+        approved_decisions=[{
+            "authority_ref": "decision:approved-plan",
+            "supersedes": [],
+            "replacement": "Use the approved bounded plan.",
+            "approved_at": "2026-07-26T00:00:00Z",
+        }],
+    )
+    store._update_preflight_summary(
+        "wf-contract-1",
+        effective_contract_revision=2,
+        semantic_repair_count=1,
+        proportionality_verdict="PROPORTIONATE",
+    )
+
+    updated = preflight(store, "VERIFY")
+
+    assert updated["execution_profile"] == "VERIFY"
+    assert "REVIEWER_AFTER_EVIDENCE" not in updated["workflow_order"]
+    assert updated["effective_plan_revision"] == "approved-plan-r1"
+    assert updated["effective_contract_revision"] == 2
+    assert updated["effective_decision_refs"] == ["decision:approved-plan"]
+    assert updated["semantic_repair_count"] == 1
+    assert updated["proportionality_verdict"] == "PROPORTIONATE"
+    assert "profile" not in updated
+    assert "task_profile" not in updated
+
+
 def test_full_requires_specific_reason_and_real_trigger(project_root: Path) -> None:
     init_project(project_root, assume_yes=True)
     store = WorkflowRefinementStore(load_project(project_root))
@@ -424,6 +461,17 @@ def test_role_instructions_enforce_proportionality_and_complexity_block() -> Non
     assert "`VERIFY` is the default delegated workflow" in supervisor
     assert all(f"`{depth}`" in supervisor for depth in ("DIRECT", "VERIFY", "REVIEW", "FULL"))
     assert "minimum execution profile" in supervisor
+    assert "reassess the remaining execution profile after Explorer returns the PLAN" in supervisor
+    assert "Analysis-stage `REVIEW` and use of Explorer do not automatically require" in supervisor
+    assert "bounded + internal + reversible + no consumer → `VERIFY`" in supervisor
+    assert "before downstream `set-authority` and Implementer dispatch" in supervisor
+    for trigger in (
+        "public, external, cross-module, or cross-system consumer",
+        "authentication, authorization, credential, security, or private-data impact",
+        "Evaluator `NOT_VERIFIED`, coverage gaps, or contradictory evidence",
+        "Completion Gate requiring formal Review or Prune",
+    ):
+        assert trigger in supervisor
     assert "PROPORTIONALITY_REASSESSMENT_REQUIRED" in supervisor
     assert "required_now" in explorer and "optional_hardening" in explorer and "deferred" in explorer
     assert "CONTRACT_COMPLEXITY_CONFLICT" in implementer
@@ -434,6 +482,25 @@ def test_role_instructions_enforce_proportionality_and_complexity_block() -> Non
     assert "use Evaluator evidence as an input" in reviewer
     assert "do not act as a second Evaluator or repeat the full validation suite" in reviewer
     assert "dispatched only when documentation is a deliverable" in doc_curator
+
+
+def test_routing_docs_match_explorer_reassessment_policy() -> None:
+    root = Path(__file__).parents[1] / "docs"
+    english = (root / "en/workflow-routing.md").read_text(encoding="utf-8")
+    traditional_chinese = (
+        root / "zh-TW/workflow-routing.md"
+    ).read_text(encoding="utf-8")
+    english = " ".join(english.split())
+    traditional_chinese = " ".join(traditional_chinese.split())
+
+    assert "`REVIEW` may be a temporary analysis-stage classification" in english
+    assert "downgraded to `VERIFY`" in english
+    assert "using Explorer earlier does not by itself require Reviewer" in english
+    assert "Completion Gate requiring Review or" in english
+    assert "`REVIEW` 可以只是分析階段的暫時分類" in traditional_chinese
+    assert "就降級為 `VERIFY`" in traditional_chinese
+    assert "使用過 Explorer，本身不代表一定需要 Reviewer" in traditional_chinese
+    assert "Completion Gate 要求 Review／Prune" in traditional_chinese
 
 
 def test_preflight_rejects_arbitrary_absolute_paths(project_root: Path) -> None:

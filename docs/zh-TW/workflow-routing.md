@@ -28,5 +28,18 @@ Reviewer。
 公開行為、設定、部署、migration、runbook、正式 artifact index 有變更時，
 才使用 Doc Curator。
 
+當 Explorer 只是為了解除範圍歧義時，`REVIEW` 可以只是分析階段的暫時分類。
+Explorer PLAN 獲得批准後，Supervisor 必須在派遣 Implementer 前重新評估剩餘
+實作。若修改已 bounded、屬於內部、可逆或可重建、有可執行的驗收條件，且
+沒有公開、外部、跨系統、安全／私人資料或其他 production consumer trigger，
+就降級為 `VERIFY`；分析階段使用過 Explorer，本身不代表一定需要 Reviewer。
+
+若仍有具體 review trigger，例如 production API／CLI／schema consumer、非局部
+模組影響、安全或私人資料邊界、migration、相容性、並行／生命週期／資源風險、
+驗證缺口、使用者明確要求 review，或 Completion Gate 要求 Review／Prune，則
+保留 `REVIEW`。降級時須在 downstream authority 組裝與 Implementer 派遣前，
+以固定 preflight 指令和 `--execution-profile VERIFY` 更新，並沿用已解析的
+repository 與 handoff 資訊。
+
 0.2 以前的 preflight profile 只會在讀取時正規化，避免既有安全 Gate 靜默
 失效；這不會恢復已移除的 CLI 選項，也不會讓新 workflow 寫入舊欄位。
