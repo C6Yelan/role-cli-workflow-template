@@ -19,6 +19,7 @@
 - Increased the single tmux trigger submission delay to reduce the chance that Enter arrives before the CLI composer finishes processing the paste.
 - Required Supervisor to reassess analysis-stage `REVIEW` after an approved Explorer PLAN and downgrade bounded internal no-consumer implementation to `VERIFY` when no review trigger remains.
 - Made profile reassessment rerun preflight before downstream authority assembly, preserving only the original creation time and letting the fixed `set-authority` flow project current authority afterward.
+- Standardized runtime language guidance: English canonical templates and status labels, user-language human-readable output passed through existing Task Contract prose, and a complete Traditional Chinese README without adding language configuration or metadata.
 
 ## 0.1.3 — 2026-07-19
 

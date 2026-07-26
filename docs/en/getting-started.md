@@ -39,6 +39,20 @@ role-cli-workflow attach ~/projects/NewProject
 `init` shows the planned branches and worktrees before asking for confirmation.
 It does not commit, push, reset, clean, or overwrite `main`.
 
+## Language behavior
+
+Runtime templates use English. Human-readable Supervisor output follows an
+explicit request in the current user message, then an explicit output-language
+instruction in `.role-cli-workflow/project_instructions.md`, then the language
+of the latest user message, with English as the fallback. Supervisor writes the
+human-readable Task Contract fields in that language; Workers follow an
+explicit Task Contract language or the language of its `objective`.
+
+Technical and canonical content such as code, commands, paths, identifiers,
+schema and Result Envelope keys, verdicts, status/event/error codes, raw logs,
+and raw diagnostics remains in English or its original form. This policy adds
+no CLI language option, locale setting, or runtime language metadata.
+
 ## Normal operation
 
 After attaching, communicate only with the Supervisor. The other five windows

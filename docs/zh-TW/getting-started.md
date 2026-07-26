@@ -38,6 +38,19 @@ role-cli-workflow attach ~/projects/NewProject
 `init` 會先顯示預計建立的 branches 與 worktrees，再要求確認。它不會
 commit、push、reset、clean 或覆寫 `main`。
 
+## 語言行為
+
+Runtime templates 使用英文。Supervisor 的人類可讀輸出依序採用：目前使用者
+訊息明確要求的語言、`.role-cli-workflow/project_instructions.md` 明確指定的
+輸出語言、使用者最新訊息的語言，最後才 fallback 為英文。Supervisor 會用該
+語言撰寫 Task Contract 的人類可讀欄位；Workers 則依 Task Contract 明確要求
+的語言或其 `objective` 使用的語言輸出。
+
+Code、commands、paths、identifiers、schema 與 Result Envelope keys、verdicts、
+status/event/error codes、raw logs 與 raw diagnostics 等 technical/canonical
+內容維持英文或原文。本政策沒有新增 CLI language option、locale setting 或
+runtime language metadata。
+
 ## 日常操作
 
 attach 後只與 Supervisor 互動。其他五個視窗是固定 Worker 角色，透過

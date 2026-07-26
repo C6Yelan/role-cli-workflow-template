@@ -1,13 +1,23 @@
 # Role CLI Workflow Template
 
+[English](README.md) | [繁體中文](README.zh-TW.md)
+
 A reusable Linux/WSL project template for one fixed six-role AI CLI workflow: Supervisor, Explorer, Implementer, Evaluator, Reviewer, and Doc Curator. Supervisor is the only user-facing role. TaskStore JSON is runtime truth; Markdown is a deterministic human-readable projection.
 
 Codex has a built-in provider. Other AI CLI tools can be connected through the generic adapter contract described below. This is a community project and is not an official OpenAI product.
 
 ## Documentation
 
-- [English](docs/en/README.md)
-- [繁體中文](docs/zh-TW/README.md)
+- [English documentation](docs/en/README.md)
+- [Traditional Chinese documentation](docs/zh-TW/README.md)
+
+## Language behavior
+
+Runtime templates and canonical role instructions are written in English. Human-readable Supervisor replies follow an explicit language request in the current user message first, then an explicit output-language instruction in `.role-cli-workflow/project_instructions.md`, then the language of the user's latest message, with English as the fallback. Supervisor writes the human-readable Task Contract fields in that selected language so Workers can use the same language without reading the original conversation.
+
+Workers follow an explicitly requested language in the Task Contract, otherwise the language of its `objective`, with English as the fallback. A Doc Curator documentation target language takes precedence when specified. Code, commands, CLI options, paths, Git refs, identifiers, schema and Result Envelope keys, verdicts, status codes, event kinds, error codes, raw logs, raw diagnostics, and verbatim text remain in English or their original form. `[WORKFLOW_STATUS]` uses English canonical field labels while its human-readable values may follow the selected language.
+
+This is an instruction-level policy. There is no CLI language option, locale setting, translation service, or language field in project configuration, TaskStore, preflight metadata, or Result Envelopes.
 
 ## Requirements
 
