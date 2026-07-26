@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import sys
 import tomllib
 from pathlib import Path
 
@@ -25,13 +27,60 @@ def fake_codex_home(tmp_path: Path, project_root: Path) -> Path:
     return home
 
 
+def fake_codex_cli(tmp_path: Path, project_root: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    binary_dir = tmp_path / "bin"
+    binary_dir.mkdir()
+    binary = binary_dir / "codex"
+    repo_roles = {
+        str(load_project(project_root).repo(role)): role
+        for role in ROLES
+    }
+    binary.write_text(
+        f"""#!{sys.executable}
+import json
+import sys
+
+repo_roles = {repo_roles!r}
+args = sys.argv[1:]
+
+if args == ["--version"]:
+    print("codex-cli 1.0.0")
+elif args == ["login", "status"]:
+    pass
+elif len(args) == 4 and args[0] == "-C" and args[2:] == ["debug", "prompt-input"]:
+    role = repo_roles.get(args[1])
+    if role is None:
+        raise SystemExit(1)
+    print(f"ROLE_CLI_WORKFLOW_CONFIG_PROBE:{{role}}")
+elif args[:2] == ["execpolicy", "check"]:
+    print(json.dumps({{"decision": "allow"}}))
+else:
+    raise SystemExit(2)
+""",
+        encoding="utf-8",
+    )
+    binary.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{binary_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    return binary
+
+
 def test_doctor_levels(project_root: Path, tmp_path: Path, monkeypatch) -> None:
     init_project(project_root, assume_yes=True)
     monkeypatch.setenv("CODEX_HOME", str(fake_codex_home(tmp_path, project_root)))
-    monkeypatch.setattr("role_cli_workflow.doctor._login_ok", lambda binary, args: True)
+    binary = fake_codex_cli(tmp_path, project_root, monkeypatch)
     checks = run_doctor(project_root, include_handshake=False)
     assert not [row for row in checks if row.level == "FAIL"]
     assert [row for row in checks if row.level == "WARNING" and row.name.startswith("command:")]
+    rows = {row.name: row for row in checks}
+    assert rows["CLI"].level == "PASS"
+    assert rows["CLI"].detail == f"codex: {binary}"
+    assert rows["CLI version"].level == "PASS"
+    assert rows["CLI login"].level == "PASS"
+    for role in ROLES:
+        assert rows[f"trust:{role}"].level == "PASS"
+        assert rows[f"config:{role}"].level == "PASS"
+        assert rows[f"config-autoload:{role}"].level == "PASS"
+        assert rows[f"rules:{role}"].level == "PASS"
 
 
 def test_real_stdio_matrix(project_root: Path) -> None:
@@ -52,10 +101,11 @@ def test_real_stdio_matrix(project_root: Path) -> None:
 def test_version_is_reported_without_a_pin(project_root: Path, tmp_path: Path, monkeypatch) -> None:
     init_project(project_root, assume_yes=True)
     monkeypatch.setenv("CODEX_HOME", str(fake_codex_home(tmp_path, project_root)))
-    monkeypatch.setattr("role_cli_workflow.doctor._login_ok", lambda binary, args: True)
+    fake_codex_cli(tmp_path, project_root, monkeypatch)
     checks = run_doctor(project_root, include_handshake=False)
     version = next(row for row in checks if row.name == "CLI version")
     assert version.level == "PASS"
+    assert version.detail == "codex-cli 1.0.0"
     assert "known-good" not in version.detail
 
 
