@@ -16,10 +16,13 @@ from .config import ProjectConfig, ROLES
 from .project import git
 from .refinement import WorkflowRefinementStore
 
-OPERATIONS = ("add", "commit", "push")
+TASK_OPERATIONS = ("add", "commit", "push")
+INTEGRATION_OPERATIONS = ("merge", "push")
+MERGE_METHODS = ("ff-only", "no-ff")
 PARTIAL_STATES = (
     "NOT_STARTED", "ADD_COMPLETED", "COMMIT_COMPLETED", "PUSH_COMPLETED",
-    "ADD_FAILED", "COMMIT_FAILED", "PUSH_FAILED", "INVALIDATED",
+    "MERGE_COMPLETED", "ADD_FAILED", "COMMIT_FAILED", "MERGE_FAILED",
+    "PUSH_FAILED", "INVALIDATED",
 )
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _SAFE_REF = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,255}\Z")
@@ -168,9 +171,9 @@ class GitTransactionStore:
         path = self._path(transaction_id)
         if path.exists():
             raise GitTransactionError("transaction_id already exists")
-        if not operations or any(item not in OPERATIONS for item in operations):
+        if not operations or any(item not in TASK_OPERATIONS for item in operations):
             raise GitTransactionError("transaction operations are invalid")
-        ordered = [item for item in OPERATIONS if item in operations]
+        ordered = [item for item in TASK_OPERATIONS if item in operations]
         if ordered != operations or len(set(operations)) != len(operations):
             raise GitTransactionError("transaction operations must be an ordered subset")
         if "commit" in operations and "add" not in operations:
@@ -209,6 +212,7 @@ class GitTransactionStore:
         if "push" in operations and not expected_ff:
             raise GitTransactionError("planned push is not fast-forward")
         plan = {
+            "kind": "task",
             "transaction_id": _safe_id(transaction_id, "transaction_id"),
             "workflow_id": _safe_id(workflow_id, "workflow_id"),
             "task_id": _safe_id(task_id, "task_id"),
@@ -243,6 +247,124 @@ class GitTransactionStore:
         _atomic(path, payload)
         return payload
 
+    def create_integration_plan(
+        self,
+        *,
+        transaction_id: str,
+        workflow_id: str,
+        task_id: str,
+        repo_id: str,
+        operations: list[str],
+        source_branch: str,
+        target_branch: str,
+        merge_method: str,
+        remote: str = "origin",
+        destination_ref: str = "",
+    ) -> dict[str, Any]:
+        path = self._path(transaction_id)
+        if path.exists():
+            raise GitTransactionError("transaction_id already exists")
+        if operations not in (["merge"], ["merge", "push"]):
+            raise GitTransactionError("integration operations must be merge or merge then push")
+        if repo_id != "main":
+            raise GitTransactionError("integration transactions require the main repository")
+        source_branch = _safe_ref(source_branch, "source branch")
+        target_branch = _safe_ref(target_branch, "target branch")
+        if source_branch == target_branch:
+            raise GitTransactionError("source and target branches must differ")
+        if merge_method not in MERGE_METHODS:
+            raise GitTransactionError("merge method is invalid")
+        remote = _safe_ref(remote, "remote")
+        destination_ref = _safe_ref(
+            destination_ref or f"refs/heads/{target_branch}",
+            "destination ref",
+        )
+        if not destination_ref.startswith("refs/heads/"):
+            raise GitTransactionError("destination ref must be a branch ref")
+        if "push" not in operations and destination_ref != f"refs/heads/{target_branch}":
+            raise GitTransactionError("merge-only transaction cannot change destination ref")
+
+        repo = self._repo(repo_id)
+        current_branch = git(repo, "branch", "--show-current").stdout.strip()
+        if current_branch != target_branch:
+            raise GitTransactionError("target branch must be currently checked out")
+        status_paths, status_raw = _status_paths(repo)
+        if status_paths or git(repo, "diff", "--cached", "--name-only").stdout.splitlines():
+            raise GitTransactionError("integration transaction requires a clean working tree")
+        source_result = git(
+            repo, "rev-parse", "--verify", f"refs/heads/{source_branch}", check=False
+        )
+        if source_result.returncode:
+            raise GitTransactionError("source branch is unavailable")
+        source_sha = source_result.stdout.strip()
+        target_sha = git(repo, "rev-parse", "HEAD").stdout.strip()
+        if source_sha == target_sha:
+            raise GitTransactionError("source and target already identify the same commit")
+        if merge_method == "ff-only" and git(
+            repo, "merge-base", "--is-ancestor", target_sha, source_sha, check=False
+        ).returncode:
+            raise GitTransactionError("planned merge is not fast-forward")
+
+        remote_url_result = git(repo, "remote", "get-url", remote, check=False)
+        if remote_url_result.returncode:
+            raise GitTransactionError("remote is unavailable")
+        remote_url_hash = _hash(remote_url_result.stdout.strip())
+        remote_head = ""
+        if "push" in operations:
+            remote_result = git(
+                repo, "ls-remote", "--heads", remote, destination_ref, check=False
+            )
+            if remote_result.returncode:
+                raise GitTransactionError("remote ref could not be inspected")
+            remote_head = (
+                remote_result.stdout.split()[0] if remote_result.stdout.strip() else ""
+            )
+            if remote_head != target_sha:
+                raise GitTransactionError(
+                    "destination ref must match the target starting SHA"
+                )
+
+        plan = {
+            "kind": "integration",
+            "transaction_id": _safe_id(transaction_id, "transaction_id"),
+            "workflow_id": _safe_id(workflow_id, "workflow_id"),
+            "task_id": _safe_id(task_id, "task_id"),
+            "repo_id": repo_id,
+            "repo_path": "main",
+            "operations": operations,
+            "source_branch": source_branch,
+            "source_sha": source_sha,
+            "target_branch": target_branch,
+            "target_starting_sha": target_sha,
+            "merge_method": merge_method,
+            "remote": remote,
+            "remote_url_hash": remote_url_hash,
+            "destination_ref": destination_ref,
+            "remote_head_sha": remote_head,
+            "force_allowed": False,
+            "expected_worktree_state": "CLEAN",
+            "status_summary": status_raw,
+            "stop_conditions": [
+                "branch, SHA, remote, ref, or working-tree drift",
+                "merge conflict or unapproved conflict resolution",
+                "merge method or operation scope change",
+                "force or non-fast-forward push requirement",
+            ],
+            "created_at": _now(),
+        }
+        payload = {
+            "plan": plan,
+            "plan_hash": _hash(plan),
+            "approval": None,
+            "partial_state": "NOT_STARTED",
+            "consumed": False,
+            "merge_sha": "",
+            "remote_ref": "",
+            "last_error": "",
+        }
+        _atomic(path, payload)
+        return payload
+
     def approve(self, transaction_id: str, approval_summary: str) -> dict[str, Any]:
         if os.environ.get("ROLE_CLI_WORKFLOW_ROLE") != "supervisor":
             raise GitTransactionError("only Supervisor may approve a Git transaction")
@@ -253,6 +375,13 @@ class GitTransactionStore:
         plan = payload.get("plan")
         if not isinstance(plan, dict) or payload.get("plan_hash") != _hash(plan):
             raise GitTransactionError("transaction plan integrity check failed")
+        exact_id = re.compile(
+            rf"(?<![A-Za-z0-9._-]){re.escape(transaction_id)}(?![A-Za-z0-9._-])"
+        )
+        if not exact_id.search(approval_summary):
+            raise GitTransactionError(
+                "approval must explicitly identify the displayed transaction_id"
+            )
         payload["approval"] = {
             "approved_operations": list(plan["operations"]),
             "approved_transaction_hash": payload["plan_hash"],
@@ -298,6 +427,8 @@ class GitTransactionStore:
             if isinstance(payload.get("approval"), dict) and not payload.get("consumed"):
                 self._invalidate(path, payload, str(exc))
             raise
+        if plan.get("kind") == "integration":
+            return self._execute_integration(path, payload, plan)
         state = str(payload.get("partial_state"))
         if state == "INVALIDATED":
             raise GitTransactionError("transaction is invalidated")
@@ -381,6 +512,195 @@ class GitTransactionStore:
             (operations[-1] == "add" and state == "ADD_COMPLETED")
             or (operations[-1] == "commit" and state == "COMMIT_COMPLETED")
             or (operations[-1] == "push" and state == "PUSH_COMPLETED")
+        )
+        if terminal:
+            payload["consumed"] = True
+            approval = payload.get("approval")
+            if isinstance(approval, dict):
+                approval["consumed"] = True
+                approval["consumed_at"] = _now()
+            payload["last_error"] = ""
+            _atomic(path, payload)
+        return payload
+
+    def _integration_state(
+        self, repo: Path, plan: dict[str, Any], *, expected_head: str
+    ) -> str | None:
+        if git(repo, "branch", "--show-current").stdout.strip() != plan["target_branch"]:
+            return "target branch changed"
+        if git(repo, "rev-parse", "HEAD").stdout.strip() != expected_head:
+            return "target HEAD changed"
+        status_paths, _ = _status_paths(repo)
+        if status_paths or git(repo, "diff", "--cached", "--name-only").stdout.splitlines():
+            return "working tree state changed"
+        source = git(
+            repo,
+            "rev-parse",
+            "--verify",
+            f"refs/heads/{plan['source_branch']}",
+            check=False,
+        )
+        if source.returncode or source.stdout.strip() != plan["source_sha"]:
+            return "source SHA changed"
+        remote_url = git(repo, "remote", "get-url", str(plan["remote"]), check=False)
+        if remote_url.returncode or _hash(remote_url.stdout.strip()) != plan["remote_url_hash"]:
+            return "remote changed"
+        return None
+
+    def _remote_head(
+        self, repo: Path, plan: dict[str, Any]
+    ) -> tuple[str, str | None]:
+        result = git(
+            repo,
+            "ls-remote",
+            "--heads",
+            str(plan["remote"]),
+            str(plan["destination_ref"]),
+            check=False,
+        )
+        if result.returncode:
+            return "", "remote ref could not be inspected"
+        return (
+            result.stdout.split()[0] if result.stdout.strip() else "",
+            None,
+        )
+
+    def _execute_integration(
+        self,
+        path: Path,
+        payload: dict[str, Any],
+        plan: dict[str, Any],
+    ) -> dict[str, Any]:
+        state = str(payload.get("partial_state"))
+        if state == "INVALIDATED":
+            raise GitTransactionError("transaction is invalidated")
+        repo = self._repo(str(plan["repo_id"]))
+
+        if state == "NOT_STARTED":
+            drift = self._integration_state(
+                repo, plan, expected_head=str(plan["target_starting_sha"])
+            )
+            if drift:
+                self._invalidate(path, payload, drift)
+                raise GitTransactionError(f"transaction invalidated: {drift}")
+            if "push" in plan["operations"]:
+                remote_head, error = self._remote_head(repo, plan)
+                if error or remote_head != plan["remote_head_sha"]:
+                    self._invalidate(path, payload, error or "destination ref changed")
+                    raise GitTransactionError(
+                        f"transaction invalidated: {error or 'destination ref changed'}"
+                    )
+            method = (
+                ["merge", "--ff-only"]
+                if plan["merge_method"] == "ff-only"
+                else ["merge", "--no-ff", "--no-edit"]
+            )
+            result = git(repo, *method, str(plan["source_sha"]), check=False)
+            if result.returncode:
+                conflicts = git(
+                    repo, "diff", "--name-only", "--diff-filter=U", check=False
+                ).stdout.splitlines()
+                reason = (
+                    "merge conflict; manual resolution is not approved"
+                    if conflicts
+                    else "planned merge failed"
+                )
+                payload["failure_stage"] = "MERGE"
+                self._invalidate(path, payload, reason)
+                raise GitTransactionError(f"transaction invalidated: {reason}")
+
+            merge_sha = git(repo, "rev-parse", "HEAD").stdout.strip()
+            drift = self._integration_state(repo, plan, expected_head=merge_sha)
+            if drift:
+                self._invalidate(path, payload, drift)
+                raise GitTransactionError(f"transaction invalidated: {drift}")
+            if plan["merge_method"] == "ff-only":
+                valid_result = merge_sha == plan["source_sha"]
+            else:
+                parents = git(
+                    repo, "rev-list", "--parents", "-n", "1", merge_sha
+                ).stdout.split()
+                valid_result = (
+                    len(parents) == 3
+                    and parents[1] == plan["target_starting_sha"]
+                    and parents[2] == plan["source_sha"]
+                )
+            if not valid_result:
+                self._invalidate(path, payload, "merge result did not match the plan")
+                raise GitTransactionError(
+                    "transaction invalidated: merge result did not match the plan"
+                )
+            payload["merge_sha"] = merge_sha
+            payload["partial_state"] = "MERGE_COMPLETED"
+            _atomic(path, payload)
+            state = "MERGE_COMPLETED"
+
+        if "push" in plan["operations"] and state in {
+            "MERGE_COMPLETED",
+            "PUSH_FAILED",
+        }:
+            merge_sha = str(payload.get("merge_sha", ""))
+            drift = self._integration_state(repo, plan, expected_head=merge_sha)
+            if drift:
+                self._invalidate(path, payload, drift)
+                raise GitTransactionError(f"transaction invalidated: {drift}")
+            remote_head, error = self._remote_head(repo, plan)
+            if error:
+                payload["partial_state"], payload["last_error"] = "PUSH_FAILED", error
+                _atomic(path, payload)
+                raise GitTransactionError("Git transaction stopped before push")
+            if remote_head != plan["remote_head_sha"]:
+                self._invalidate(path, payload, "destination ref changed")
+                raise GitTransactionError(
+                    "transaction invalidated: destination ref changed"
+                )
+            if remote_head and git(
+                repo, "merge-base", "--is-ancestor", remote_head, merge_sha, check=False
+            ).returncode:
+                self._invalidate(path, payload, "push is not fast-forward")
+                raise GitTransactionError(
+                    "transaction invalidated: push is not fast-forward"
+                )
+            result = git(
+                repo,
+                "push",
+                str(plan["remote"]),
+                f"{merge_sha}:{plan['destination_ref']}",
+                check=False,
+            )
+            if result.returncode:
+                current_remote, _ = self._remote_head(repo, plan)
+                if current_remote != plan["remote_head_sha"] or "non-fast-forward" in (
+                    result.stdout + result.stderr
+                ):
+                    self._invalidate(
+                        path, payload, "push requires drift or non-fast-forward override"
+                    )
+                    raise GitTransactionError(
+                        "transaction invalidated: push requires non-fast-forward override"
+                    )
+                payload["partial_state"], payload["last_error"] = (
+                    "PUSH_FAILED",
+                    "git push failed",
+                )
+                _atomic(path, payload)
+                raise GitTransactionError("Git transaction stopped after push failure")
+            pushed_head, error = self._remote_head(repo, plan)
+            if error or pushed_head != merge_sha:
+                payload["partial_state"], payload["last_error"] = (
+                    "PUSH_FAILED",
+                    error or "pushed ref did not match the merge result",
+                )
+                _atomic(path, payload)
+                raise GitTransactionError("Git transaction push could not be verified")
+            payload["partial_state"] = "PUSH_COMPLETED"
+            payload["remote_ref"] = f"{plan['remote']}/{plan['destination_ref']}"
+            state = "PUSH_COMPLETED"
+
+        terminal = (
+            plan["operations"] == ["merge"] and state == "MERGE_COMPLETED"
+        ) or (
+            plan["operations"] == ["merge", "push"] and state == "PUSH_COMPLETED"
         )
         if terminal:
             payload["consumed"] = True

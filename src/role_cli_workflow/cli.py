@@ -136,10 +136,17 @@ def parser() -> argparse.ArgumentParser:
     git_plan.add_argument("project_root"); git_plan.add_argument("transaction_id")
     git_plan.add_argument("--workflow-id", required=True); git_plan.add_argument("--task-id", required=True)
     git_plan.add_argument("--repo-id", choices=("main", *ROLES[1:]), required=True)
-    git_plan.add_argument("--operation", action="append", choices=("add", "commit", "push"), required=True)
-    git_plan.add_argument("--file", action="append", required=True)
-    git_plan.add_argument("--commit-message", required=True)
+    git_plan.add_argument(
+        "--operation", action="append", choices=("add", "commit", "merge", "push"),
+        required=True,
+    )
+    git_plan.add_argument("--file", action="append", default=[])
+    git_plan.add_argument("--commit-message", default="")
     git_plan.add_argument("--remote", default="origin"); git_plan.add_argument("--remote-branch", default="")
+    git_plan.add_argument("--source-branch", default="")
+    git_plan.add_argument("--target-branch", default="")
+    git_plan.add_argument("--merge-method", choices=("ff-only", "no-ff"), default="ff-only")
+    git_plan.add_argument("--destination-ref", default="")
     git_approve = git_sub.add_parser("approve")
     git_approve.add_argument("project_root"); git_approve.add_argument("transaction_id")
     git_approve.add_argument("--approval-summary", required=True)
@@ -226,13 +233,27 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "git":
             store = GitTransactionStore(load_project(args.project_root))
             if args.git_command == "plan":
-                payload = store.create_plan(
-                    transaction_id=args.transaction_id, workflow_id=args.workflow_id,
-                    task_id=args.task_id, repo_id=args.repo_id,
-                    operations=args.operation, explicit_files=args.file,
-                    commit_message=args.commit_message, remote=args.remote,
-                    remote_branch=args.remote_branch,
-                )
+                if "merge" in args.operation:
+                    payload = store.create_integration_plan(
+                        transaction_id=args.transaction_id,
+                        workflow_id=args.workflow_id,
+                        task_id=args.task_id,
+                        repo_id=args.repo_id,
+                        operations=args.operation,
+                        source_branch=args.source_branch,
+                        target_branch=args.target_branch,
+                        merge_method=args.merge_method,
+                        remote=args.remote,
+                        destination_ref=args.destination_ref,
+                    )
+                else:
+                    payload = store.create_plan(
+                        transaction_id=args.transaction_id, workflow_id=args.workflow_id,
+                        task_id=args.task_id, repo_id=args.repo_id,
+                        operations=args.operation, explicit_files=args.file,
+                        commit_message=args.commit_message, remote=args.remote,
+                        remote_branch=args.remote_branch,
+                    )
             elif args.git_command == "approve":
                 payload = store.approve(args.transaction_id, args.approval_summary)
             elif args.git_command == "execute":

@@ -17,6 +17,18 @@
 callback 會帶上明確的 workflow、task、role 與終態。`DELIVERED` 只代表喚醒
 文字已送到 Supervisor pane，不能單獨證明已完成面向使用者的回報。
 
+## Git transaction 恢復
+
+Open-ended Git authorization 會被拒絕，直到 Supervisor 展示精確 transaction。
+一次明確且指出該 transaction 的核准，可以涵蓋有序的 integration merge 與
+resulting push。每次 write 前，executor 都會重新檢查 source/target SHAs、
+clean worktree、merge method、remote identity、destination ref 與
+fast-forward/no-force conditions。
+
+Drift、conflict、未核准的 resolution，或 force/non-fast-forward requirement
+會使 approval 失效並要求新 plan。暫時性的 `PUSH_FAILED` 會保存已驗證的
+merge SHA；只有所有核准條件保持不變時，才能只重試該 push。
+
 ## 放棄執行中的任務
 
 只有在使用者或 Supervisor 已確認任務遭放棄或失效後，才使用

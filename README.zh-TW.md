@@ -152,7 +152,7 @@ Adapter 必須載入 role instructions、註冊提供的 stdio MCP server、將 
 
 | Role | Intended sandbox / approval | Git authority |
 | --- | --- | --- |
-| Supervisor | workspace-write over project root / on-request | read、fetch、pull `--ff-only`；direct add、commit、merge、push 需要 prompt；精確核准的 task-branch transaction 可一次組合 add/commit/push；只有此角色可 merge |
+| Supervisor | workspace-write over project root / on-request | read、fetch、pull `--ff-only`；direct writes 需要 prompt；精確核准的 transaction 可一次組合 task-branch add/commit/push 或 integration merge/resulting push；只有此角色可 merge |
 | Implementer | workspace-write / never | 可在自己的 task branch add、commit、push；禁止 protected push 與 merge |
 | Doc Curator | workspace-write / never | 可在 approved docs branch add、commit、push；禁止 protected push 與 merge |
 | Explorer | read-only / never | read、fetch、pull `--ff-only`；禁止 publication 與 merge |
@@ -186,7 +186,7 @@ Reviewer 分別回報 correctness 與 cumulative proportionality verdicts。固�
 
 ## 核准的 Git transactions
 
-Supervisor 直接執行 Git writes 時，仍保留既有 per-command prompts。若要為精確的 add/commit/push subset 取得一次核准，先建立 read-only plan 並展示給使用者：
+Supervisor 直接執行 Git writes 時，仍保留既有 per-command prompts。「完成所有 Git 操作」這類 open-ended request 不構成核准。若要為精確的 add/commit/push subset 取得一次核准，先建立 read-only plan 並展示給使用者：
 
 ```bash
 role-cli-workflow git plan ~/projects/NewProject tx-001 \
@@ -199,11 +199,24 @@ role-cli-workflow git plan ~/projects/NewProject tx-001 \
 
 ```bash
 role-cli-workflow git approve ~/projects/NewProject tx-001 \
-  --approval-summary "User approved the displayed tx-001 plan"
+  --approval-summary "User explicitly approved the displayed tx-001 plan"
 role-cli-workflow git execute ~/projects/NewProject tx-001
 ```
 
-Executor 不接受 arbitrary repo path、shell command 或額外 Git argument。它會重新驗證 branch、HEAD、精確 files/content、message、remote/ref、sensitive paths 與 fast-forward safety。Scope drift 會使 approval 失效。Push retry 只會從已保存的 `PUSH_FAILED` 繼續，不會重新執行 add 或 commit。Merge 與 integration-branch push 永遠需要分開核准。
+Integration plan 也可以包含一次精確 merge 與其 resulting push：
+
+```bash
+role-cli-workflow git plan ~/projects/NewProject tx-integration-001 \
+  --workflow-id wf-001 --task-id task-001 --repo-id main \
+  --operation merge --operation push \
+  --source-branch feature/approved-change --target-branch main \
+  --merge-method ff-only --remote origin \
+  --destination-ref refs/heads/main
+```
+
+產生的 plan 會記錄 source branch/SHA、target branch/starting SHA、merge method、remote identity、destination ref、clean-worktree expectation、no-force rule 與 stop conditions。一次明確且指出 `tx-integration-001` 的核准可涵蓋已展示的 `merge → push` sequence，因此 merge 完成後不會再次要求 push approval。
+
+Executor 不接受 arbitrary repo path、shell command 或額外 Git argument。每次 write 前都會重新驗證已核准的 branch、SHA、worktree、remote/ref 與 fast-forward safety。Scope drift、conflict、未核准的 resolution 或 modification、merge method 改變、force/non-fast-forward requirement，或 plan 外操作都會使 approval 失效。暫時性 push failure 會保留 partial state；只有精確條件不變時才能重試同一個 push。Tag、rebase、cherry-pick、deletion、cleanup 與 force 仍不屬於 transaction。
 
 Status output 將 pane/process telemetry（`ALIVE`、`DOWN`、`UNKNOWN`）、task execution 與 latest MCP activity 視為獨立事實。一般 callbacks 使用 compact workflow block；只有 explicit status request、多個 active validation/review tasks、blocked/unavailable roles、telemetry anomaly、partial Git failure 與 final acceptance 才顯示完整 role table。
 

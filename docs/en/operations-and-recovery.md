@@ -19,6 +19,19 @@ Callbacks identify the exact workflow, task, role, and terminal status. A
 `DELIVERED` callback means the wakeup text reached the Supervisor pane; it does
 not independently prove that a user-facing report was completed.
 
+## Git transaction recovery
+
+Open-ended Git authorization is rejected until Supervisor displays an exact
+transaction. One explicit approval naming that transaction may cover an ordered
+integration merge and resulting push. Before each write, the executor checks
+the source/target SHAs, clean worktree, merge method, remote identity, destination
+ref, and fast-forward/no-force conditions again.
+
+Drift, conflict, unapproved resolution, or a force/non-fast-forward requirement
+invalidates approval and requires a new plan. A transient `PUSH_FAILED` retains
+the verified merge SHA and may retry only that push while every approved
+condition remains unchanged.
+
 ## Abandoning a running task
 
 Use `cancel_task` only after the user or Supervisor has confirmed that the task

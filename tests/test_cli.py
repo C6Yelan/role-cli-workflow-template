@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from role_cli_workflow.bootstrap import init_project
-from role_cli_workflow.cli import _role_launch
+from role_cli_workflow.cli import _role_launch, parser
 from role_cli_workflow.config import ProjectConfigError, load_project
 
 
@@ -20,6 +20,41 @@ def test_distribution_exposes_only_the_provider_neutral_command() -> None:
     }
     assert (root / "src/role_cli_workflow").is_dir()
     assert not (root / "src/codex_role_workflow").exists()
+
+
+def test_git_plan_cli_accepts_exact_integration_fields() -> None:
+    args = parser().parse_args(
+        [
+            "git",
+            "plan",
+            "/tmp/project",
+            "tx-integration",
+            "--workflow-id",
+            "wf-1",
+            "--task-id",
+            "task-1",
+            "--repo-id",
+            "main",
+            "--operation",
+            "merge",
+            "--operation",
+            "push",
+            "--source-branch",
+            "feature/change",
+            "--target-branch",
+            "main",
+            "--merge-method",
+            "ff-only",
+            "--remote",
+            "origin",
+            "--destination-ref",
+            "refs/heads/main",
+        ]
+    )
+    assert args.operation == ["merge", "push"]
+    assert args.source_branch == "feature/change"
+    assert args.target_branch == "main"
+    assert args.destination_ref == "refs/heads/main"
 
 
 def capture_launch(project_root: Path, role: str, monkeypatch: pytest.MonkeyPatch) -> list[str]:

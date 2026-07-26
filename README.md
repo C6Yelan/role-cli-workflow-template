@@ -139,7 +139,7 @@ With the Codex provider, each worktree receives a local `.codex/config.toml` and
 
 | Role | Intended sandbox / approval | Git authority |
 | --- | --- | --- |
-| Supervisor | workspace-write over project root / on-request | read, fetch, pull `--ff-only`; direct add, commit, merge, push prompt; an exact approved task-branch transaction may combine add/commit/push once; only role allowed to merge |
+| Supervisor | workspace-write over project root / on-request | read, fetch, pull `--ff-only`; direct writes prompt; an exact approved transaction may combine task-branch add/commit/push or integration merge/resulting push once; only role allowed to merge |
 | Implementer | workspace-write / never | add, commit, push own task branch; protected push and merge forbidden |
 | Doc Curator | workspace-write / never | add, commit, push approved docs branch; protected push and merge forbidden |
 | Explorer | read-only / never | read, fetch, pull `--ff-only`; publication and merge forbidden |
@@ -164,7 +164,7 @@ Each delegated workflow may add `tasks/<workflow-id>/data/preflight.json` plus a
 
 ## Approved Git transactions
 
-Direct Supervisor Git writes keep their existing per-command prompts. To request one approval for an exact add/commit/push subset, create a read-only plan and show it to the user:
+Direct Supervisor Git writes keep their existing per-command prompts. Open-ended requests such as "finish all Git operations" are not approval. To request one approval for an exact add/commit/push subset, create a read-only plan and show it to the user:
 
 ```bash
 role-cli-workflow git plan ~/projects/NewProject tx-001 \
@@ -177,11 +177,24 @@ After the user explicitly approves that displayed transaction, Supervisor record
 
 ```bash
 role-cli-workflow git approve ~/projects/NewProject tx-001 \
-  --approval-summary "User approved the displayed tx-001 plan"
+  --approval-summary "User explicitly approved the displayed tx-001 plan"
 role-cli-workflow git execute ~/projects/NewProject tx-001
 ```
 
-The executor accepts no arbitrary repo path, shell command or extra Git argument. It revalidates branch, HEAD, exact files and content, message, remote/ref, sensitive paths and fast-forward safety. Scope drift invalidates the approval. Push retry resumes only after a saved `PUSH_FAILED`; it does not redo add or commit. Merge and integration-branch push always remain separate approvals.
+An integration plan may instead include one exact merge and its resulting push:
+
+```bash
+role-cli-workflow git plan ~/projects/NewProject tx-integration-001 \
+  --workflow-id wf-001 --task-id task-001 --repo-id main \
+  --operation merge --operation push \
+  --source-branch feature/approved-change --target-branch main \
+  --merge-method ff-only --remote origin \
+  --destination-ref refs/heads/main
+```
+
+The generated plan records the source branch/SHA, target branch/starting SHA, merge method, remote identity, destination ref, clean-worktree expectation, no-force rule, and stop conditions. One explicit approval naming `tx-integration-001` covers the displayed `merge → push` sequence, so no second push approval is requested after that merge.
+
+The executor accepts no arbitrary repo path, shell command or extra Git argument. Before each write it revalidates the approved branch, SHA, worktree, remote/ref and fast-forward safety. Scope drift, conflict, unapproved resolution or modification, changed merge method, force/non-fast-forward requirement, or any operation outside the plan invalidates approval. A transient push failure preserves partial state and may retry only the same push while the exact approved conditions remain unchanged. Tags, rebase, cherry-pick, deletion, cleanup and force remain outside these transactions.
 
 Status output treats pane/process telemetry (`ALIVE`, `DOWN`, `UNKNOWN`), task execution, and latest MCP activity as independent facts. Normal callbacks use a compact workflow block; full role tables are reserved for explicit status requests, multiple active validation/review tasks, blocked/unavailable roles, telemetry anomalies, partial Git failures and final acceptance.
 

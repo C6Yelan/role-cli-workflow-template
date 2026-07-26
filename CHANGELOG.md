@@ -21,6 +21,7 @@
 - Made profile reassessment rerun preflight before downstream authority assembly, preserving only the original creation time and letting the fixed `set-authority` flow project current authority afterward.
 - Standardized runtime language guidance: English canonical templates and status labels, user-language human-readable output passed through existing Task Contract prose, and a complete Traditional Chinese README without adding language configuration or metadata.
 - Added a minimal GitHub Actions CI workflow for Python 3.12 lockfile installation, the full pytest suite, and package builds on Ubuntu.
+- Allowed one exact transaction approval to cover an ordered integration merge and resulting fast-forward push while preserving drift, conflict, no-force, and out-of-plan invalidation.
 
 ## 0.1.3 — 2026-07-19
 

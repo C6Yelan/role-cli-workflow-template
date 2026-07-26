@@ -483,6 +483,11 @@ def test_role_instructions_enforce_proportionality_and_complexity_block() -> Non
     ):
         assert trigger in supervisor
     assert "PROPORTIONALITY_REASSESSMENT_REQUIRED" in supervisor
+    assert "Open-ended authorization" in supervisor
+    assert "including `merge → push`" in supervisor
+    assert "do not request a second push approval" in supervisor
+    assert "non-fast-forward/force requirement" in supervisor
+    assert "Tag, rebase, cherry-pick, branch deletion, cleanup, force" in supervisor
     assert "required_now" in explorer and "optional_hardening" in explorer and "deferred" in explorer
     assert "CONTRACT_COMPLEXITY_CONFLICT" in implementer
     assert "validation_verdict" in evaluator
@@ -511,6 +516,30 @@ def test_routing_docs_match_explorer_reassessment_policy() -> None:
     assert "就降級為 `VERIFY`" in traditional_chinese
     assert "使用過 Explorer，本身不代表一定需要 Reviewer" in traditional_chinese
     assert "Completion Gate 要求 Review／Prune" in traditional_chinese
+
+
+def test_bilingual_git_transaction_docs_match_exact_approval_policy() -> None:
+    root = Path(__file__).parents[1]
+    english = (root / "README.md").read_text(encoding="utf-8")
+    traditional_chinese = (root / "README.zh-TW.md").read_text(encoding="utf-8")
+    operations_en = (root / "docs/en/operations-and-recovery.md").read_text(
+        encoding="utf-8"
+    )
+    operations_zh = (
+        root / "docs/zh-TW/operations-and-recovery.md"
+    ).read_text(encoding="utf-8")
+    for content in (english, traditional_chinese):
+        assert "--operation merge --operation push" in content
+        assert "--source-branch" in content
+        assert "--target-branch" in content
+        assert "--destination-ref" in content
+        assert "non-fast-forward" in content
+    assert "Open-ended requests" in english
+    assert "no second push approval" in english
+    assert "open-ended request" in traditional_chinese
+    assert "不會再次要求 push approval" in traditional_chinese
+    assert "One explicit approval" in operations_en
+    assert "一次明確且指出該 transaction 的核准" in operations_zh
 
 
 def test_preflight_rejects_arbitrary_absolute_paths(project_root: Path) -> None:
