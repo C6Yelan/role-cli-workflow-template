@@ -1,4 +1,4 @@
-"""Small task-scoped workflow metadata used by the fixed six-role flow."""
+"""Small task-scoped workflow metadata used by the six-role routing policy."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from typing import Any
 
 from .config import ProjectConfig, ROLES
 
-TASK_PROFILES = ("STANDARD", "CONTRACT_SENSITIVE")
+EXECUTION_PROFILES = ("DIRECT", "VERIFY", "REVIEW", "FULL")
 EVENT_KINDS = (
     "INITIAL_IMPLEMENTATION",
     "IMPLEMENTATION_REVISION",
@@ -43,7 +43,7 @@ OPTIONAL_CONTRACT_FIELDS = (
     "migration_rules",
     "authorization_rules",
 )
-CONTRACT_SENSITIVE_TRIGGERS = frozenset({
+FULL_EXECUTION_TRIGGERS = frozenset({
     "public_api",
     "database_migration",
     "cross_system_exchange",
@@ -55,28 +55,42 @@ CONTRACT_SENSITIVE_TRIGGERS = frozenset({
     "commit_sha_locked_release",
     "regulatory_privacy_retention",
 })
-NON_SUFFICIENT_PROFILE_REASONS = frozenset({
+NON_SUFFICIENT_FULL_REASONS = frozenset({
     "has schema", "has private data", "has stable file", "needs tests",
 })
 WORKFLOW_ORDER = {
-    "STANDARD": (
-        "SUPERVISOR_PREFLIGHT",
-        "EXPLORER_PLAN",
-        "USER_PLAN_APPROVAL",
-        "IMPLEMENTER",
-        "EVALUATOR_REVIEWER_PARALLEL",
-        "DOC_CURATOR",
+    "DIRECT": (
+        "SUPERVISOR_DIRECT",
+        "SUPERVISOR_ACCEPTANCE",
     ),
-    "CONTRACT_SENSITIVE": (
+    "VERIFY": (
+        "SUPERVISOR_PREFLIGHT",
+        "IMPLEMENTER",
+        "EVALUATOR",
+        "IMPLEMENTER_EVALUATOR_FEEDBACK_IF_FAILED",
+        "SUPERVISOR_ACCEPTANCE",
+    ),
+    "REVIEW": (
+        "SUPERVISOR_PREFLIGHT",
+        "EXPLORER_IF_SCOPE_UNCLEAR",
+        "IMPLEMENTER",
+        "EVALUATOR",
+        "IMPLEMENTER_EVALUATOR_FEEDBACK_IF_FAILED",
+        "REVIEWER_AFTER_EVIDENCE",
+        "DOC_CURATOR_IF_DOCUMENTATION_REQUIRED",
+        "SUPERVISOR_ACCEPTANCE",
+    ),
+    "FULL": (
         "SUPERVISOR_PREFLIGHT",
         "EXPLORER_CONTRACT_PLAN",
         "USER_PLAN_CONTRACT_APPROVAL",
         "IMPLEMENTER_CANDIDATE",
-        "REVIEWER_FOCUSED_PRECHECK",
+        "REVIEWER_DESIGN_PRECHECK_IF_REQUIRED",
         "IMPLEMENTER_FOCUSED_REPAIR_IF_REQUIRED",
         "FINAL_CANDIDATE_SHA_FREEZE",
-        "EVALUATOR_LOCKED_GATE_REVIEWER_FINAL_CONFIRMATION",
-        "DOC_CURATOR",
+        "EVALUATOR_LOCKED_GATE",
+        "REVIEWER_FINAL_CONFIRMATION",
+        "DOC_CURATOR_IF_DOCUMENTATION_REQUIRED",
         "USER_INTEGRATION_APPROVAL",
     ),
 }
@@ -107,13 +121,13 @@ class RefinementError(RuntimeError):
     """Invalid or inconsistent refinement metadata."""
 
 
-def classify_task_profile(facts: dict[str, bool]) -> str:
-    """Classify explicit preflight facts; this intentionally does not inspect task prose."""
+def classify_execution_profile(facts: dict[str, bool]) -> str:
+    """Promote explicit high-impact facts; this intentionally does not inspect task prose."""
     if not isinstance(facts, dict) or any(not isinstance(key, str) or not isinstance(value, bool) for key, value in facts.items()):
-        raise RefinementError("profile facts must be boolean flags")
-    return "CONTRACT_SENSITIVE" if any(
-        facts.get(trigger, False) for trigger in CONTRACT_SENSITIVE_TRIGGERS
-    ) else "STANDARD"
+        raise RefinementError("execution facts must be boolean flags")
+    return "FULL" if any(
+        facts.get(trigger, False) for trigger in FULL_EXECUTION_TRIGGERS
+    ) else "VERIFY"
 
 
 def _now() -> str:
@@ -141,14 +155,14 @@ def _string_list(value: list[str], label: str, *, paths: bool = False) -> list[s
     return [_relative_path(item, label) for item in value] if paths else list(value)
 
 
-def _profile_reason(profile: str, reason: str, triggers: list[str]) -> tuple[str, list[str]]:
+def _execution_reason(profile: str, reason: str, triggers: list[str]) -> tuple[str, list[str]]:
     clean_reason = reason.strip() if isinstance(reason, str) else ""
-    clean_triggers = _string_list(triggers, "profile triggers")
-    if profile == "CONTRACT_SENSITIVE":
-        if not clean_reason or clean_reason.lower().strip(" .:") in NON_SUFFICIENT_PROFILE_REASONS:
-            raise RefinementError("CONTRACT_SENSITIVE requires a specific risk reason")
-        if not set(clean_triggers) & CONTRACT_SENSITIVE_TRIGGERS:
-            raise RefinementError("CONTRACT_SENSITIVE requires an applicable risk trigger")
+    clean_triggers = _string_list(triggers, "execution triggers")
+    if profile == "FULL":
+        if not clean_reason or clean_reason.lower().strip(" .:") in NON_SUFFICIENT_FULL_REASONS:
+            raise RefinementError("FULL requires a specific high-impact reason")
+        if not set(clean_triggers) & FULL_EXECUTION_TRIGGERS:
+            raise RefinementError("FULL requires an applicable high-impact trigger")
     return clean_reason, clean_triggers
 
 
@@ -257,9 +271,9 @@ class WorkflowRefinementStore:
         self,
         *,
         workflow_id: str,
-        task_profile: str = "STANDARD",
-        profile_reason: str = "",
-        profile_triggers: list[str] | None = None,
+        execution_profile: str = "VERIFY",
+        execution_reason: str = "",
+        execution_triggers: list[str] | None = None,
         target_role: str,
         base_sha: str,
         current_target_sha: str,
@@ -276,10 +290,12 @@ class WorkflowRefinementStore:
         expected_git_handoff: str,
         unresolved_items: list[str],
     ) -> dict[str, Any]:
-        if task_profile not in TASK_PROFILES:
-            raise RefinementError("task profile is invalid")
-        profile_reason, profile_triggers = _profile_reason(
-            task_profile, profile_reason, [] if profile_triggers is None else profile_triggers
+        if execution_profile not in EXECUTION_PROFILES:
+            raise RefinementError("execution profile is invalid")
+        execution_reason, execution_triggers = _execution_reason(
+            execution_profile,
+            execution_reason,
+            [] if execution_triggers is None else execution_triggers,
         )
         if target_role not in ROLES:
             raise RefinementError("target role is invalid")
@@ -294,12 +310,10 @@ class WorkflowRefinementStore:
         repo_id = "main" if target_role == "supervisor" else target_role
         payload = {
             "workflow_id": _safe_id(workflow_id, "workflow_id"),
-            "task_profile": task_profile,
-            "profile": task_profile,
-            "profile_reason": profile_reason or "STANDARD is the default proportional workflow.",
-            "profile_triggers": profile_triggers,
-            "standard_default_overridden": task_profile == "CONTRACT_SENSITIVE",
-            "workflow_order": list(WORKFLOW_ORDER[task_profile]),
+            "execution_profile": execution_profile,
+            "execution_reason": execution_reason or f"{execution_profile} is the selected minimum workflow.",
+            "execution_triggers": execution_triggers,
+            "workflow_order": list(WORKFLOW_ORDER[execution_profile]),
             "target_repo": repo_id,
             "target_worktree": str(self.config.repo(target_role).relative_to(self.config.root)),
             "base_branch": self.config.base_branch,
@@ -337,10 +351,11 @@ class WorkflowRefinementStore:
             "# Workflow Preflight",
             "",
             f"- Workflow ID: `{payload['workflow_id']}`",
-            f"- Task profile: `{payload['task_profile']}`",
-            f"- Profile reason: {payload.get('profile_reason', 'Legacy workflow; profile reason unavailable.')}",
-            "- Profile triggers: " + (", ".join(f"`{item}`" for item in payload.get("profile_triggers", [])) or "None"),
-            f"- Standard default overridden: `{str(payload.get('standard_default_overridden', False)).lower()}`",
+            f"- Execution profile: `{payload['execution_profile']}`",
+            f"- Execution reason: {payload['execution_reason']}",
+            "- Execution triggers: " + (
+                ", ".join(f"`{item}`" for item in payload.get("execution_triggers", [])) or "None"
+            ),
             f"- Effective PLAN revision: `{payload.get('effective_plan_revision', 'UNSET')}`",
             f"- Effective contract revision: `{payload.get('effective_contract_revision', 'UNSET')}`",
             "- Active decision refs: " + (", ".join(payload.get("effective_decision_refs", [])) or "None"),
@@ -381,8 +396,8 @@ class WorkflowRefinementStore:
 
     def freeze_contract(self, workflow_id: str, contract: dict[str, Any], approval_summary: str) -> dict[str, Any]:
         preflight = _read_json(self._path(workflow_id, "preflight.json"))
-        if preflight.get("task_profile") != "CONTRACT_SENSITIVE":
-            raise RefinementError("contract freeze requires CONTRACT_SENSITIVE profile")
+        if preflight.get("execution_profile") != "FULL":
+            raise RefinementError("contract freeze requires FULL execution profile")
         frozen_contract, advisory = _contract_projection(contract)
         path = self._path(workflow_id, "contract-freeze.json")
         now = _now()

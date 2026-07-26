@@ -190,10 +190,10 @@ class TaskStore:
         if not preflight_path.exists():
             return invariant
         preflight = self._read_json(preflight_path, "preflight metadata")
-        if preflight.get("profile") != "CONTRACT_SENSITIVE":
+        if preflight.get("execution_profile") != "FULL":
             return invariant
         if not invariant:
-            raise ValidationError("contract-sensitive semantic rework requires invariant_type")
+            raise ValidationError("FULL semantic rework requires invariant_type")
 
         metrics_path = self._refinement_path(workflow_id, "retrospective-metrics.json")
         metrics = self._read_json(metrics_path, "retrospective metrics") if metrics_path.exists() else {}
@@ -448,7 +448,12 @@ class TaskStore:
             raise StateError("frozen candidate context is unavailable")
         if kind == "preflight":
             sections = {
-                "summary": {"task_profile": payload.get("task_profile"), "profile_reason": payload.get("profile_reason"), "profile_triggers": payload.get("profile_triggers", []), "unresolved_preflight_items": payload.get("unresolved_preflight_items", [])},
+                "summary": {
+                    "execution_profile": payload.get("execution_profile"),
+                    "execution_reason": payload.get("execution_reason"),
+                    "execution_triggers": payload.get("execution_triggers", []),
+                    "unresolved_preflight_items": payload.get("unresolved_preflight_items", []),
+                },
                 "repository": {name: payload.get(name) for name in ("target_repo", "target_worktree", "base_branch", "task_branch", "base_sha", "current_target_sha", "working_tree_status")},
                 "paths": {name: payload.get(name) for name in ("canonical_input_paths", "canonical_output_paths")},
                 "toolchain": payload.get("dependency_toolchain", []),

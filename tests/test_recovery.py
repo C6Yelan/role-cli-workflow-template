@@ -162,13 +162,13 @@ def test_terminal_task_id_remains_visible_in_dashboard(project_root: Path, monke
     assert "| explorer | UNKNOWN | `task-terminal` | BLOCKED | PENDING |" in dashboard
 
 
-def test_standard_rework_skips_contract_sensitive_semantic_gate(
+def test_verify_rework_skips_full_semantic_gate(
     project_root: Path, monkeypatch
 ) -> None:
     init_project(project_root, assume_yes=True)
     store = store_for(project_root, monkeypatch, caller="supervisor", tmux=FakeTmux())
-    preflight = store._refinement_path("wf-standard", "preflight.json")
-    store._write_json(preflight, {"workflow_id": "wf-standard", "profile": "STANDARD"})
+    preflight = store._refinement_path("wf-verify", "preflight.json")
+    store._write_json(preflight, {"workflow_id": "wf-verify", "execution_profile": "VERIFY"})
     assert store._semantic_repair_checkpoint(
-        "wf-standard", "IMPLEMENTATION_REVISION", ""
+        "wf-verify", "IMPLEMENTATION_REVISION", ""
     ) == ""

@@ -12,7 +12,7 @@ from role_cli_workflow.config import load_project
 from role_cli_workflow.refinement import (
     RefinementError,
     WorkflowRefinementStore,
-    classify_task_profile,
+    classify_execution_profile,
 )
 
 
@@ -21,16 +21,16 @@ RISK_REASON = "Stable replacement is irreversible for an external consumer."
 
 def preflight(
     store: WorkflowRefinementStore,
-    profile: str = "CONTRACT_SENSITIVE",
+    profile: str = "FULL",
     *,
     reason: str = RISK_REASON,
     triggers: list[str] | None = None,
 ) -> dict[str, object]:
     return store.create_preflight(
         workflow_id="wf-contract-1",
-        task_profile=profile,
-        profile_reason=reason if profile == "CONTRACT_SENSITIVE" else "",
-        profile_triggers=(triggers or ["irreversible_publication"]) if profile == "CONTRACT_SENSITIVE" else (triggers or []),
+        execution_profile=profile,
+        execution_reason=reason if profile == "FULL" else "",
+        execution_triggers=(triggers or ["irreversible_publication"]) if profile == "FULL" else (triggers or []),
         target_role="implementer",
         base_sha="a" * 40,
         current_target_sha="b" * 40,
@@ -76,7 +76,7 @@ def required_contract(*, strict: bool = False) -> dict[str, object]:
     }
 
 
-def test_explicit_profile_facts_default_internal_rebuildable_case_to_standard() -> None:
+def test_explicit_facts_promote_only_high_impact_cases_to_full() -> None:
     facts = {
         "private_artifact": True,
         "rebuildable": True,
@@ -90,21 +90,21 @@ def test_explicit_profile_facts_default_internal_rebuildable_case_to_standard() 
         "irreversible_publication": False,
         "security_authorization_boundary": False,
     }
-    assert classify_task_profile(facts) == "STANDARD"
+    assert classify_execution_profile(facts) == "VERIFY"
     for trigger in (
         "public_api", "database_migration", "irreversible_publication",
         "security_authorization_boundary",
     ):
-        assert classify_task_profile({trigger: True}) == "CONTRACT_SENSITIVE"
+        assert classify_execution_profile({trigger: True}) == "FULL"
 
 
-def test_refinement_cli_defaults_standard_and_exposes_authority_assembly() -> None:
+def test_refinement_cli_defaults_verify_and_exposes_authority_assembly() -> None:
     preflight_args = parser().parse_args([
         "workflow", "preflight", "/tmp/project", "wf-1", "--target-role", "explorer",
         "--base-sha", "a" * 40, "--target-sha", "b" * 40,
         "--working-tree-status", "clean", "--git-handoff", "none",
     ])
-    assert preflight_args.profile == "STANDARD"
+    assert preflight_args.execution_profile == "VERIFY"
     authority_args = parser().parse_args([
         "workflow", "set-authority", "/tmp/project", "wf-1",
         "--plan-revision", "r1", "--plan-projection-json", '{"rules": []}',
@@ -129,28 +129,31 @@ def test_refinement_cli_defaults_standard_and_exposes_authority_assembly() -> No
     assert resolve_args.workflow_command == "resolve-semantic-repair"
 
 
-def test_preflight_profile_reason_projection_and_standard_order(project_root: Path) -> None:
+def test_preflight_uses_one_execution_profile_and_matching_order(project_root: Path) -> None:
     init_project(project_root, assume_yes=True)
     store = WorkflowRefinementStore(load_project(project_root))
-    standard = preflight(store, "STANDARD")
-    assert standard["profile"] == "STANDARD"
-    assert standard["standard_default_overridden"] is False
-    assert standard["workflow_order"][-2:] == ["EVALUATOR_REVIEWER_PARALLEL", "DOC_CURATOR"]
-    sensitive = preflight(store)
-    assert sensitive["profile_reason"] == RISK_REASON
-    assert sensitive["standard_default_overridden"] is True
-    assert "REVIEWER_FOCUSED_PRECHECK" in sensitive["workflow_order"]
+    review = preflight(store, "REVIEW")
+    assert review["execution_profile"] == "REVIEW"
+    assert review["workflow_order"][-2:] == [
+        "DOC_CURATOR_IF_DOCUMENTATION_REQUIRED", "SUPERVISOR_ACCEPTANCE"
+    ]
+    full = preflight(store)
+    assert full["execution_reason"] == RISK_REASON
+    assert "REVIEWER_DESIGN_PRECHECK_IF_REQUIRED" in full["workflow_order"]
+    assert full["workflow_order"].index("EVALUATOR_LOCKED_GATE") < full["workflow_order"].index(
+        "REVIEWER_FINAL_CONFIRMATION"
+    )
     projection = (store._path("wf-contract-1", "preflight.json").parents[1] / "preflight.md").read_text()
-    assert "Profile reason" in projection
+    assert "Execution profile" in projection
     assert "Effective PLAN revision" in projection
 
 
-def test_contract_sensitive_requires_specific_reason_and_real_trigger(project_root: Path) -> None:
+def test_full_requires_specific_reason_and_real_trigger(project_root: Path) -> None:
     init_project(project_root, assume_yes=True)
     store = WorkflowRefinementStore(load_project(project_root))
-    with pytest.raises(RefinementError, match="specific risk reason"):
+    with pytest.raises(RefinementError, match="specific high-impact reason"):
         preflight(store, reason="has private data")
-    with pytest.raises(RefinementError, match="applicable risk trigger"):
+    with pytest.raises(RefinementError, match="applicable high-impact trigger"):
         preflight(store, reason="Private artifact is rebuildable.", triggers=["private_artifact"])
 
 
@@ -339,18 +342,12 @@ def test_authority_context_exposes_active_projection_not_history(project_root: P
 def test_legacy_authority_warns_and_conflict_blocks(project_root: Path) -> None:
     init_project(project_root, assume_yes=True)
     store = WorkflowRefinementStore(load_project(project_root))
-    preflight(store, "STANDARD")
+    preflight(store, "VERIFY")
     assert store.effective_authority("wf-contract-1")["status"] == "LEGACY_AUTHORITY_WARNING"
     path = store._path("wf-contract-1", "authority.json")
     path.write_text(json.dumps({"status": "AUTHORITY_CONFLICT"}), encoding="utf-8")
     with pytest.raises(RefinementError, match="AUTHORITY_CONFLICT"):
         store.effective_authority("wf-contract-1")
-
-    legacy = json.loads(store._path("wf-contract-1", "preflight.json").read_text())
-    for field in ("profile_reason", "profile_triggers", "standard_default_overridden"):
-        legacy.pop(field, None)
-    store._project_preflight(legacy)
-    assert "Legacy workflow" in (store._path("wf-contract-1", "preflight.json").parents[1] / "preflight.md").read_text()
 
 
 def test_role_instructions_enforce_proportionality_and_complexity_block() -> None:
@@ -358,13 +355,22 @@ def test_role_instructions_enforce_proportionality_and_complexity_block() -> Non
     supervisor = (root / "supervisor.md").read_text(encoding="utf-8")
     explorer = (root / "explorer.md").read_text(encoding="utf-8")
     implementer = (root / "implementer.md").read_text(encoding="utf-8")
+    evaluator = (root / "evaluator.md").read_text(encoding="utf-8")
     reviewer = (root / "reviewer.md").read_text(encoding="utf-8")
-    assert "`STANDARD` is the default" in supervisor
+    doc_curator = (root / "doc-curator.md").read_text(encoding="utf-8")
+    assert "`VERIFY` is the default delegated workflow" in supervisor
+    assert all(f"`{depth}`" in supervisor for depth in ("DIRECT", "VERIFY", "REVIEW", "FULL"))
+    assert "minimum execution profile" in supervisor
     assert "PROPORTIONALITY_REASSESSMENT_REQUIRED" in supervisor
     assert "required_now" in explorer and "optional_hardening" in explorer and "deferred" in explorer
     assert "CONTRACT_COMPLEXITY_CONFLICT" in implementer
+    assert "validation_verdict" in evaluator
+    assert "final merge-readiness decisions" in evaluator
     assert "correctness_verdict" in reviewer and "proportionality_verdict" in reviewer
     assert "cumulative base-to-final diff" in reviewer
+    assert "use Evaluator evidence as an input" in reviewer
+    assert "do not act as a second Evaluator or repeat the full validation suite" in reviewer
+    assert "dispatched only when documentation is a deliverable" in doc_curator
 
 
 def test_preflight_rejects_arbitrary_absolute_paths(project_root: Path) -> None:

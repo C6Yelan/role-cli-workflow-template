@@ -15,7 +15,7 @@ from .doctor import print_checks, run_doctor
 from .lifecycle import LifecycleError, attach_workflow, open_workflow, status_workflow, stop_workflow, verify_workflow
 from .project import ProjectError
 from .git_transaction import GitTransactionError, GitTransactionStore
-from .refinement import RefinementError, WorkflowRefinementStore
+from .refinement import EXECUTION_PROFILES, RefinementError, WorkflowRefinementStore
 
 
 def _bridge_server(root: str, role: str | None = None) -> int:
@@ -149,9 +149,11 @@ def parser() -> argparse.ArgumentParser:
     workflow_sub = workflow.add_subparsers(dest="workflow_command", required=True)
     preflight = workflow_sub.add_parser("preflight")
     preflight.add_argument("project_root"); preflight.add_argument("workflow_id")
-    preflight.add_argument("--profile", choices=("STANDARD", "CONTRACT_SENSITIVE"), default="STANDARD")
-    preflight.add_argument("--profile-reason", default="")
-    preflight.add_argument("--profile-trigger", action="append", default=[])
+    preflight.add_argument(
+        "--execution-profile", choices=EXECUTION_PROFILES, default="VERIFY"
+    )
+    preflight.add_argument("--execution-reason", default="")
+    preflight.add_argument("--execution-trigger", action="append", default=[])
     preflight.add_argument("--target-role", choices=ROLES, required=True)
     preflight.add_argument("--base-sha", required=True); preflight.add_argument("--target-sha", required=True)
     preflight.add_argument("--working-tree-status", required=True)
@@ -240,9 +242,9 @@ def main(argv: list[str] | None = None) -> int:
             store = WorkflowRefinementStore(load_project(args.project_root))
             if args.workflow_command == "preflight":
                 payload = store.create_preflight(
-                    workflow_id=args.workflow_id, task_profile=args.profile,
-                    profile_reason=args.profile_reason,
-                    profile_triggers=args.profile_trigger,
+                    workflow_id=args.workflow_id, execution_profile=args.execution_profile,
+                    execution_reason=args.execution_reason,
+                    execution_triggers=args.execution_trigger,
                     target_role=args.target_role, base_sha=args.base_sha,
                     current_target_sha=args.target_sha,
                     working_tree_status=args.working_tree_status,

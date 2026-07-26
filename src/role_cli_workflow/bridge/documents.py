@@ -326,9 +326,11 @@ class WorkflowDocuments:
             except (OSError, json.JSONDecodeError):
                 preflight = {}
             index[6:6] = [
-                f"- Task profile: `{preflight.get('profile', preflight.get('task_profile', 'LEGACY'))}`",
-                f"- Profile reason: {preflight.get('profile_reason', 'Legacy workflow; authority metadata unavailable.')}",
-                "- Profile triggers: " + (", ".join(preflight.get("profile_triggers", [])) or "None"),
+                f"- Execution profile: `{preflight.get('execution_profile', 'UNSET')}`",
+                f"- Execution reason: {preflight.get('execution_reason', 'Unavailable')}",
+                "- Execution triggers: " + (
+                    ", ".join(preflight.get("execution_triggers", [])) or "None"
+                ),
                 f"- Effective PLAN revision: `{preflight.get('effective_plan_revision') or 'LEGACY'}`",
                 f"- Effective contract revision: `{preflight.get('effective_contract_revision') or 'None'}`",
                 "- Active decision refs: " + (", ".join(preflight.get("effective_decision_refs", [])) or "None"),
