@@ -9,9 +9,12 @@ import secrets
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from functools import wraps
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator, TypeVar
 
+from ..config import ESCALATION_CONTROLLER
+from ..control import ControlStore
 from .config import RUNTIME_ROOT, WORKER_ROLES, ensure_runtime_permissions, load_roles
 from .contracts import (
     canonical_json,
@@ -78,6 +81,8 @@ WORKER_STARTED_TRIGGER = (
 )
 RECENT_ACTIVITY_WINDOW = timedelta(minutes=5)
 LOCK_TIMEOUT_SECONDS = 5.0
+MANAGEMENT_CALLERS = frozenset({"supervisor", ESCALATION_CONTROLLER})
+_Method = TypeVar("_Method", bound=Callable[..., object])
 
 
 class StateError(RuntimeError):
@@ -100,6 +105,15 @@ def _activity_is_stale(value: str) -> bool:
 
 def _activity_is_recent(value: str) -> bool:
     return bool(value) and not _activity_is_stale(value)
+
+
+def _controlled_mutation(method: _Method) -> _Method:
+    @wraps(method)
+    def guarded(self: "TaskStore", *args: object, **kwargs: object) -> object:
+        with self._control_store().mutation_guard(self.caller_role):
+            return method(self, *args, **kwargs)
+
+    return guarded  # type: ignore[return-value]
 
 
 class TaskStore:
@@ -137,6 +151,13 @@ class TaskStore:
             fcntl.flock(descriptor, fcntl.LOCK_UN)
             os.close(descriptor)
 
+    def _control_store(self) -> ControlStore:
+        return ControlStore(METADATA_DIR.parent)
+
+    def _require_manager(self) -> None:
+        if self.caller_role not in MANAGEMENT_CALLERS:
+            raise StateError("tool is not allowed for this role")
+
     def _require_supervisor(self) -> None:
         if self.caller_role != "supervisor":
             raise StateError("tool is not allowed for this role")
@@ -144,6 +165,8 @@ class TaskStore:
     def _require_worker(self) -> str:
         if self.caller_role not in WORKER_ROLES:
             raise StateError("tool is not allowed for this role")
+        if self._control_store().read().mode != "NORMAL":
+            raise StateError("worker tools are unavailable during workflow escalation")
         return self.caller_role
 
     def _task_dir(self, task_id: str, create: bool = False) -> Path:
@@ -446,8 +469,30 @@ class TaskStore:
         return rows
 
     def list_roles(self) -> dict[str, object]:
-        self._require_supervisor()
-        return {"roles": self._role_rows()}
+        self._require_manager()
+        return {
+            "roles": self._role_rows(),
+            "control": self._control_store().read().to_dict(),
+        }
+
+    def get_control_state(self) -> dict[str, object]:
+        self._require_manager()
+        return {"control": self._control_store().read().to_dict()}
+
+    def release_control(self, intervention_id: str, summary: str) -> dict[str, object]:
+        if self.caller_role != ESCALATION_CONTROLLER:
+            raise StateError("tool is not allowed for this role")
+        from ..config import load_project
+        from ..lifecycle import is_live, role_processes_live
+
+        config = load_project(os.environ["ROLE_CLI_WORKFLOW_PROJECT_ROOT"])
+        if is_live(config) or role_processes_live(config):
+            raise StateError(
+                "fixed workflow runtime must be stopped before escalation release"
+            )
+        return {
+            "control": self._control_store().release(intervention_id, summary).to_dict()
+        }
 
     def _workflow_metadata_sections(self, ref_id: str) -> tuple[dict[str, Any], dict[str, object]]:
         kind, workflow_id = ref_id.split(":", 1)
@@ -576,6 +621,7 @@ class TaskStore:
             "hash": sha256_text(canonical_json(decision)), "authority_class": "ACTIVE_AUTHORITY",
         }
 
+    @_controlled_mutation
     def assign_task(
         self,
         workflow_id: str,
@@ -661,6 +707,7 @@ class TaskStore:
                 warnings.append("WAKEUP_PENDING")
             return {**self._public(record), "warnings": warnings}
 
+    @_controlled_mutation
     def cancel_task(self, task_id: str, reason: str) -> dict[str, object]:
         self._require_supervisor()
         validate_task_id(task_id)
@@ -691,6 +738,7 @@ class TaskStore:
                 self._write_record(record)
             return self._public(record)
 
+    @_controlled_mutation
     def retry_dispatch(self, task_id: str) -> dict[str, object]:
         self._require_supervisor()
         validate_task_id(task_id)
@@ -711,6 +759,7 @@ class TaskStore:
             self._log(record, "wakeup_delivered")
             return self._public(record)
 
+    @_controlled_mutation
     def retry_callback(self, task_id: str) -> dict[str, object]:
         self._require_supervisor()
         validate_task_id(task_id)
@@ -992,7 +1041,7 @@ class TaskStore:
         return [str(path.relative_to(WORKFLOW_ROOT)) for path in candidates if path.is_file()]
 
     def get_task_result(self, task_id: str, section: str | None = None) -> dict[str, object]:
-        self._require_supervisor()
+        self._require_manager()
         validate_task_id(task_id)
         record = self._read_record(task_id)
         if record.status == "BLOCKED":
@@ -1021,6 +1070,7 @@ class TaskStore:
             "document_warning": record.document_warning,
         }
 
+    @_controlled_mutation
     def send_rework(
         self,
         task_id: str,
@@ -1144,6 +1194,7 @@ class TaskStore:
                 return {**self._public(record), "warnings": ["WAKEUP_PENDING"]}
             return {**self._public(record), "warnings": []}
 
+    @_controlled_mutation
     def record_decision(
         self,
         decision_id: str,
@@ -1156,7 +1207,7 @@ class TaskStore:
         replacement: str = "",
         authority_ref: str = "",
     ) -> dict[str, object]:
-        self._require_supervisor()
+        self._require_manager()
         validate_decision_id(decision_id)
         for field, value in (("title", title), ("decision", decision), ("reason", reason), ("scope", scope)):
             validate_text(value, field=field, maximum=MAX_PAYLOAD_BYTES)

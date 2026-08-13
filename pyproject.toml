@@ -1,7 +1,7 @@
 [project]
 name = "role-cli-workflow"
-version = "0.2.0"
-description = "Fixed six-role AI CLI project workflow for Linux and WSL"
+version = "0.3.0"
+description = "Fixed six-role AI CLI workflow with optional on-demand escalation"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12,<3.13"

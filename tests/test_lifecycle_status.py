@@ -7,6 +7,7 @@ from pathlib import Path
 from role_cli_workflow import lifecycle
 from role_cli_workflow.bootstrap import init_project
 from role_cli_workflow.config import ROLES, load_project
+from role_cli_workflow.control import ControlStore
 from role_cli_workflow.lifecycle import status_workflow
 from role_cli_workflow.project import git
 
@@ -46,6 +47,7 @@ def test_status_displays_clean_worktrees(
     output = capsys.readouterr().out
 
     assert "Git worktrees (read-only; DIRTY is informational)" in output
+    assert "Control: NORMAL (owner: supervisor)" in output
     for role in ROLES:
         row = _status_row(output, role)
         assert row[4:] == ["CLEAN", "0", "0"]
@@ -118,3 +120,23 @@ def test_status_keeps_legacy_authority_warning_visible(
 
     assert "Warnings" in output
     assert "LEGACY_AUTHORITY_WARNING workflow:wf-legacy" in output
+
+
+def test_status_displays_escalation_and_invalid_state(
+    project_root: Path, capsys
+) -> None:
+    init_project(project_root, assume_yes=True)
+    store = ControlStore(load_project(project_root).runtime_root)
+    store.acquire("architecture-001", "Resolve one complex change directly")
+    capsys.readouterr()
+
+    assert status_workflow(project_root) == 0
+    output = capsys.readouterr().out
+    assert (
+        "Control: ESCALATION (owner: escalation-controller), "
+        "intervention: architecture-001"
+    ) in output
+
+    store.path.write_text("invalid", encoding="utf-8")
+    assert status_workflow(project_root) == 1
+    assert "Control: INVALID (management mutations fail closed)" in capsys.readouterr().out

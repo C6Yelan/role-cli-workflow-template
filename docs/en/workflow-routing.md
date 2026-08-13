@@ -14,6 +14,12 @@ legacy metadata field.
 | `REVIEW` | Explorer if needed → Implementer ↔ Evaluator → Reviewer → Supervisor | Completeness, design, or wider impact needs review |
 | `FULL` | Contract/discovery gates → Implementer ↔ Evaluator → Reviewer → conditional Doc Curator | The change has a justified public, migration, security, irreversible, or cross-system impact |
 
+The optional escalation controller is outside these delegated profiles. It is
+an explicit, temporary intervention for unusually complex implementation or
+workflow recovery. It takes control only when no task or callback needs
+attention, works directly without dispatching fixed Workers, and explicitly
+returns control to Supervisor when the candidate is ready.
+
 Evaluator owns executable validation and evidence. It reports `PASS`, `FAIL`,
 or `NOT_VERIFIED`; failed evidence returns through Supervisor to Implementer.
 Reviewer runs after relevant validation and judges the complete diff,

@@ -31,6 +31,25 @@ reasoning_effort = "high"
 Omit `model` or `reasoning_effort` to let the configured CLI choose its own
 default. The template does not pin a Codex version or maintain a model allowlist.
 
+## Optional escalation controller
+
+The on-demand controller is disabled by default and is not a fixed role,
+worktree, branch, or tmux pane:
+
+```toml
+[cli.escalation]
+enabled = true
+# model = "your-controller-model"
+# reasoning_effort = "high"
+# args = []
+```
+
+Omitted model and reasoning values inherit the `[cli]` defaults. The controller
+starts in the project root, works directly on the existing candidate, and has no
+Worker-dispatch or Git-publication authority. A generic adapter receives
+`escalation-controller` as `{role}` and must enforce the supplied controller
+instructions, tool allowlist, sandbox, and Git policy.
+
 ## Other AI CLI tools
 
 Use the generic provider when another CLI or a provider-specific adapter will

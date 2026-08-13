@@ -17,10 +17,20 @@ def test_role_tool_matrix(project_root: Path, monkeypatch) -> None:
     expected_supervisor = {
         "list_roles", "assign_task", "cancel_task", "retry_dispatch",
         "retry_callback", "get_task_result", "send_rework", "record_decision",
+        "get_control_state",
     }
     for role in ("supervisor", "explorer", "implementer", "evaluator", "reviewer", "doc-curator"):
         names = {tool.name for tool in server.create_mcp(role)._tool_manager.list_tools()}
         assert names == (expected_supervisor if role == "supervisor" else expected_worker)
+
+    controller = {
+        tool.name
+        for tool in server.create_mcp("escalation-controller")._tool_manager.list_tools()
+    }
+    assert controller == {
+        "list_roles", "get_control_state", "get_task_result", "record_decision",
+        "release_control",
+    }
 
 
 def test_bridge_uses_generic_trigger_and_task_contract(project_root: Path, monkeypatch) -> None:

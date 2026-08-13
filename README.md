@@ -2,7 +2,7 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md)
 
-A reusable Linux/WSL project template for one fixed six-role AI CLI workflow: Supervisor, Explorer, Implementer, Evaluator, Reviewer, and Doc Curator. Supervisor is the only user-facing role. TaskStore JSON is runtime truth; Markdown is a deterministic human-readable projection.
+A reusable Linux/WSL project template for one fixed six-role AI CLI workflow: Supervisor, Explorer, Implementer, Evaluator, Reviewer, and Doc Curator. Supervisor is the normal user-facing role. An optional on-demand escalation controller can temporarily take exclusive workflow control for unusually complex work without becoming a seventh fixed role. TaskStore JSON is runtime truth; Markdown is a deterministic human-readable projection.
 
 Codex has a built-in provider. Other AI CLI tools can be connected through the generic adapter contract described below. This is a community project and is not an official OpenAI product.
 
@@ -56,6 +56,7 @@ It can also be installed directly from GitHub with `uv tool install "git+https:/
 ├── shared_workspace/
 │   ├── role_bridge/       canonical role maps and provider policy
 │   ├── roles/             canonical role instructions
+│   ├── controllers/       optional on-demand controller instructions
 │   ├── workflow/          human-readable projections and task documents
 │   ├── scripts/           fixed role launchers
 │   └── runtime/           TaskStore and fixed tmux socket
@@ -77,6 +78,7 @@ The default role branches are `workflow/<role>`. To override one, add (for examp
 - `attach`: attach directly to the Supervisor window.
 - `status`: display runtime/task metadata and a read-only Git summary for every fixed worktree without parsing panes. `DIRTY` is informational; status never cleans or changes a worktree.
 - `stop`: stop only the fixed tmux server and remove an exact stale socket. Worktrees, tasks, results, and reports remain.
+- `escalation start|status|release`: explicitly enter, inspect, or leave the optional on-demand controller. It never creates another worktree or tmux pane.
 
 After `attach`, use the mouse wheel for history, click the bottom window labels to inspect roles, `Ctrl+b [` for copy mode, `q` or `Esc` to leave copy mode, and `Ctrl+b d` to detach. Avoid typing in automated Worker composers while a task is active.
 
@@ -99,9 +101,17 @@ model = "your-supervisor-model"
 [cli.roles.implementer]
 model = "your-implementation-model"
 reasoning_effort = "high"
+
+[cli.escalation]
+enabled = false
+# model = "your-controller-model"
+# reasoning_effort = "high"
+# args = []
 ```
 
 In this example, roles without an override use `your-default-model`; Supervisor and Implementer use their role-specific models. The same configuration works with the generic provider.
+
+`[cli.escalation]` is optional and defaults to disabled, including for existing project files that do not contain the table. When enabled, the controller inherits the CLI defaults unless its model, reasoning effort, or arguments are overridden. It starts from the project root and edits the existing candidate directly, but it is not added to `ROLES`, worktrees, branches, or the fixed tmux session.
 
 ### Other CLI providers
 
@@ -127,7 +137,7 @@ version_args = ["--version"]
 login_check_args = []
 ```
 
-Supported placeholders are `{project_root}`, `{repo}`, `{role}`, `{model}`, `{reasoning_effort}`, `{role_instructions}`, `{bridge_command}`, `{bridge_cwd}`, and `{enabled_tools}`. The same values are exported as `ROLE_CLI_WORKFLOW_PROJECT_ROOT`, `ROLE_CLI_WORKFLOW_REPO`, `ROLE_CLI_WORKFLOW_ROLE`, `ROLE_CLI_WORKFLOW_MODEL`, `ROLE_CLI_WORKFLOW_REASONING_EFFORT`, `ROLE_CLI_WORKFLOW_ROLE_INSTRUCTIONS`, `ROLE_CLI_WORKFLOW_MCP_COMMAND`, `ROLE_CLI_WORKFLOW_MCP_CWD`, and `ROLE_CLI_WORKFLOW_MCP_ENABLED_TOOLS`. Model-related variables are omitted when no model or reasoning effort is configured; using their placeholders without a configured value is an error.
+Supported placeholders are `{project_root}`, `{repo}`, `{role}`, `{model}`, `{reasoning_effort}`, `{role_instructions}`, `{bridge_command}`, `{bridge_cwd}`, and `{enabled_tools}`. For fixed roles, `{repo}` is that role's worktree; for the escalation controller it is the project root. The same values are exported as `ROLE_CLI_WORKFLOW_PROJECT_ROOT`, `ROLE_CLI_WORKFLOW_REPO`, `ROLE_CLI_WORKFLOW_ROLE`, `ROLE_CLI_WORKFLOW_MODEL`, `ROLE_CLI_WORKFLOW_REASONING_EFFORT`, `ROLE_CLI_WORKFLOW_ROLE_INSTRUCTIONS`, `ROLE_CLI_WORKFLOW_MCP_COMMAND`, `ROLE_CLI_WORKFLOW_MCP_CWD`, and `ROLE_CLI_WORKFLOW_MCP_ENABLED_TOOLS`. Model-related variables are omitted when no model or reasoning effort is configured; using their placeholders without a configured value is an error.
 
 The adapter must load the role instructions, register the supplied stdio MCP server, restrict tools to the supplied role matrix, and implement the intended sandbox, approval, trust, authentication, and Git policy. Those controls are provider-specific and cannot be inferred safely from one universal command line. See `examples/generic/project.toml`.
 
@@ -145,6 +155,7 @@ With the Codex provider, each worktree receives a local `.codex/config.toml` and
 | Explorer | read-only / never | read, fetch, pull `--ff-only`; publication and merge forbidden |
 | Evaluator | workspace-write / never | read, fetch, pull `--ff-only`; writable output is for validation artifacts, not Git publication |
 | Reviewer | read-only / never | read, fetch, pull `--ff-only`; publication and merge forbidden |
+| Escalation Controller (optional) | project-root workspace-write / on-request | Direct Git CLI use and the fixed Git executor are forbidden; inspect files through read-only filesystem tools |
 
 All role instructions forbid destructive reset/clean, force push, forced branch/worktree deletion, repository-wide overwrite, and shell command-string wrappers. Codex receives generated execpolicy rules. Generic providers must enforce equivalent boundaries in their adapter or CLI configuration. Rules are a command boundary, not a substitute for user review.
 
@@ -159,6 +170,8 @@ Task state is durable even when a tmux wakeup fails. `WAKEUP_PENDING` means Supe
 Long-running child commands keep their exact live session or cell ID until an explicit exit code is observed. Intermediate output is not completion, and a second writer or retry must not start while the original session remains unresolved.
 
 Runtime JSON under `shared_workspace/runtime` is the source of truth. `shared_workspace/workflow/current_task.md`, task reports, indexes, handoffs, and decision log are projections only.
+
+The optional controller uses a small durable `NORMAL`/`ESCALATION` control state. Run `start` from outside the fixed workflow tmux session. It succeeds only when no running task, pending callback, or pending dispatch needs attention, then stops and verifies the six-role runtime before launching the controller. The controller works directly instead of dispatching Workers and must explicitly release the matching intervention ID after all edits and tests stop. Stop, launch, or controller-exit failures leave `ESCALATION` active; there is no automatic release, lease, heartbeat, expiry, or takeover recovery. Explicit release does not restart the six-role runtime; run `open` when normal work should resume.
 
 Each delegated workflow may add `tasks/<workflow-id>/data/preflight.json` plus a short `preflight.md` projection. `VERIFY` is the default delegated profile. `FULL` requires a stated public, migration, cross-system, irreversible, security/provider, SHA-locked release, or regulatory reason and trigger. It freezes only traceable `required_now` invariants and their Completion Gate; optional hardening and deferred ideas remain advisory. Reviewer reports separate correctness and cumulative proportionality verdicts. Fixed workflow CLI commands record that assessment, assess a semantic repair, and resolve a required/advisory/deferred classification. For `FULL`, `send_rework` requires the current `invariant_type` and a current resolved checkpoint after the first semantic repair; successful dispatch records its event and metric automatically. Other profiles do not use that checkpoint. Pre-0.2 preflight profile values are normalized only when read so existing Gates remain active; removed CLI options are not restored. Effective PLAN, contract and approved decision revisions are projected once; superseded wording remains historical-only. Event metadata still separates semantic revisions from mechanical, permission/context, stale-SHA, verification and Git-approval events without changing task round or nonce.
 

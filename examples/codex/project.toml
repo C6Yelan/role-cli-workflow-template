@@ -21,6 +21,13 @@ login_check_args = ["login", "status"]
 # reasoning_effort = "medium"
 # args = []
 
+# Optional on-demand controller. It is not a fixed role, worktree, or tmux pane.
+[cli.escalation]
+enabled = false
+# model = "your-model"
+# reasoning_effort = "high"
+# args = []
+
 [git]
 base_branch = "development"
 role_branch_prefix = "workflow/"

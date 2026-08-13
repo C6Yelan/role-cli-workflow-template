@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .bootstrap import sync_project
 from .config import ROLES, ProjectConfig, load_project
+from .control import ControlError, ControlStore
 from .doctor import print_checks, run_doctor
 from .project import git
 
@@ -29,8 +30,46 @@ def is_live(config: ProjectConfig) -> bool:
     return config.socket.exists() and _tmux(config, "has-session", "-t", config.session, check=False).returncode == 0
 
 
+def role_processes_live(config: ProjectConfig) -> bool:
+    """Return whether a fixed role process still advertises this project root."""
+    proc = Path("/proc")
+    if not proc.is_dir():
+        raise LifecycleError("fixed role process verification is unavailable")
+    project_marker = f"ROLE_CLI_WORKFLOW_PROJECT_ROOT={config.root}".encode()
+    role_prefix = b"ROLE_CLI_WORKFLOW_ROLE="
+    role_values = {role.encode() for role in ROLES}
+    try:
+        entries = list(proc.iterdir())
+    except OSError as exc:
+        raise LifecycleError("fixed role process verification is unavailable") from exc
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            values = (entry / "environ").read_bytes().split(b"\0")
+        except (FileNotFoundError, PermissionError, ProcessLookupError):
+            continue
+        except OSError as exc:
+            raise LifecycleError("fixed role process verification is unavailable") from exc
+        if project_marker not in values:
+            continue
+        if any(
+            value.startswith(role_prefix)
+            and value[len(role_prefix) :] in role_values
+            for value in values
+        ):
+            return True
+    return False
+
+
 def open_workflow(root: str | Path) -> None:
     config = load_project(root)
+    try:
+        control = ControlStore(config.runtime_root).read()
+    except ControlError as exc:
+        raise LifecycleError("control state is invalid; normal workflow was not started") from exc
+    if control.mode != "NORMAL":
+        raise LifecycleError("workflow escalation is active; normal workflow was not started")
     sync_project(config.root)
     checks = run_doctor(config.root)
     if print_checks(checks):
@@ -132,6 +171,16 @@ def _legacy_authority_workflows(config: ProjectConfig) -> list[str]:
 def status_workflow(root: str | Path) -> int:
     config = load_project(root)
     print(f"Runtime: {'RUNNING' if is_live(config) else 'STOPPED'}")
+    control_invalid = False
+    try:
+        control = ControlStore(config.runtime_root).read()
+        detail = f"{control.mode} (owner: {control.owner})"
+        if control.intervention_id:
+            detail += f", intervention: {control.intervention_id}"
+        print(f"Control: {detail}")
+    except ControlError:
+        control_invalid = True
+        print("Control: INVALID (management mutations fail closed)")
     metadata = config.runtime_root / "metadata"
     rows = []
     for path in sorted(metadata.glob("*.json")) if metadata.is_dir() else []:
@@ -167,4 +216,4 @@ def status_workflow(root: str | Path) -> int:
         print("Warnings")
         for workflow_id in legacy:
             print(f"LEGACY_AUTHORITY_WARNING workflow:{workflow_id}")
-    return 0
+    return int(control_invalid)

@@ -4,6 +4,34 @@
 `shared_workspace/workflow/` 內的 Markdown 是方便閱讀的投影。在判定角色或
 任務失敗前，先執行 `role-cli-workflow status <project-root>`。
 
+## 按需 escalation
+
+啟用 `[cli.escalation]` 並執行 `sync`、`doctor` 後，只在日常工作到達安全
+邊界時，從固定 workflow tmux session 外的 shell 明確開始 intervention：
+
+```bash
+role-cli-workflow escalation start ~/projects/NewProject \
+  --intervention-id architecture-001 \
+  --reason "Resolve a complex cross-module implementation directly"
+```
+
+若仍有 running task、pending callback 或 pending dispatch，acquire 會拒絕；
+成功取得控制權後會先停止並確認固定六角色 runtime 已結束。Controller 不加入
+該 tmux session，也不派遣 Workers；它直接修改與測試、不能發布 Git state，且
+所有工作停止後必須明確 release：
+
+```bash
+role-cli-workflow escalation release ~/projects/NewProject \
+  --intervention-id architecture-001 \
+  --summary "Implementation and validation completed; return to Supervisor"
+```
+
+Runtime stop、controller launch 或 controller process 發生問題時使用
+`escalation status`。這些失敗與一般 controller exit 都會保留 `ESCALATION`；
+檢查 candidate 後再明確 release。Release 不會重新啟動固定 workflow，要恢復
+日常工作時再執行 `open`。不會自動 release，也不使用 lease、heartbeat、expiry
+或自動 takeover。
+
 ## 常見狀態
 
 | 狀態 | 意義 | 處理方式 |

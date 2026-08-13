@@ -10,9 +10,19 @@ import sys
 from pathlib import Path
 
 from .bootstrap import BootstrapError, init_project, sync_project
-from .config import ROLES, load_project
+from .config import ESCALATION_CONTROLLER, ROLES, ProjectConfig, load_project
+from .control import ControlError, ControlStore
 from .doctor import print_checks, run_doctor
-from .lifecycle import LifecycleError, attach_workflow, open_workflow, status_workflow, stop_workflow, verify_workflow
+from .lifecycle import (
+    LifecycleError,
+    attach_workflow,
+    is_live,
+    open_workflow,
+    role_processes_live,
+    status_workflow,
+    stop_workflow,
+    verify_workflow,
+)
 from .project import ProjectError
 from .git_transaction import GitTransactionError, GitTransactionStore
 from .refinement import EXECUTION_PROFILES, RefinementError, WorkflowRefinementStore
@@ -27,28 +37,39 @@ def _bridge_server(root: str, role: str | None = None) -> int:
     return 0
 
 
-def _role_launch(root: str, role: str) -> int:
-    config = load_project(root)
-    if role not in ROLES:
-        raise LifecycleError("invalid fixed role")
+SUPERVISOR_TOOLS = (
+    "list_roles", "get_control_state", "assign_task", "cancel_task",
+    "retry_dispatch", "retry_callback", "get_task_result", "send_rework",
+    "record_decision",
+)
+WORKER_TOOLS = ("get_current_task", "get_context", "submit_result", "report_blocked")
+ESCALATION_TOOLS = (
+    "list_roles", "get_control_state", "get_task_result", "record_decision",
+    "release_control",
+)
+
+
+def _launch_cli(
+    config: ProjectConfig,
+    *,
+    identity: str,
+    working_directory: Path,
+    repo: Path,
+    instructions: Path,
+    tools: tuple[str, ...],
+    model: str | None,
+    reasoning_effort: str | None,
+    identity_args: tuple[str, ...],
+) -> int:
     binary = shutil.which(config.cli_command)
     if not binary:
         raise LifecycleError(f"configured CLI is unavailable: {config.cli_command}")
     bridge_command = config.shared / "scripts" / "run_bridge_server.sh"
-    role_instructions = config.shared / "roles" / f"{role}.md"
-    tools = [
-        "list_roles", "assign_task", "cancel_task", "retry_dispatch",
-        "retry_callback", "get_task_result", "send_rework", "record_decision",
-    ] if role == "supervisor" else [
-        "get_current_task", "get_context", "submit_result", "report_blocked",
-    ]
-    model = config.model_for(role)
-    reasoning_effort = config.reasoning_effort_for(role)
     substitutions = {
         "project_root": str(config.root),
-        "repo": str(config.repo(role)),
-        "role": role,
-        "role_instructions": str(role_instructions),
+        "repo": str(repo),
+        "role": identity,
+        "role_instructions": str(instructions),
         "bridge_command": str(bridge_command),
         "bridge_cwd": str(config.bridge_root),
         "enabled_tools": ",".join(tools),
@@ -58,18 +79,20 @@ def _role_launch(root: str, role: str) -> int:
 
     def expand(items: tuple[str, ...]) -> list[str]:
         if model is None and any("{model}" in item for item in items):
-            raise LifecycleError(f"cli model is required by configured arguments for role: {role}")
+            raise LifecycleError(f"cli model is required by configured arguments for: {identity}")
         if reasoning_effort is None and any("{reasoning_effort}" in item for item in items):
-            raise LifecycleError(f"cli reasoning_effort is required by configured arguments for role: {role}")
+            raise LifecycleError(
+                f"cli reasoning_effort is required by configured arguments for: {identity}"
+            )
         return [_expand_arg(item, substitutions) for item in items]
 
     os.environ["ROLE_CLI_WORKFLOW_PROJECT_ROOT"] = str(config.root)
-    os.environ["ROLE_CLI_WORKFLOW_ROLE"] = role
+    os.environ["ROLE_CLI_WORKFLOW_ROLE"] = identity
     os.environ.update({
         "ROLE_CLI_WORKFLOW_PROJECT_ROOT": str(config.root),
-        "ROLE_CLI_WORKFLOW_REPO": str(config.repo(role)),
-        "ROLE_CLI_WORKFLOW_ROLE": role,
-        "ROLE_CLI_WORKFLOW_ROLE_INSTRUCTIONS": str(role_instructions),
+        "ROLE_CLI_WORKFLOW_REPO": str(repo),
+        "ROLE_CLI_WORKFLOW_ROLE": identity,
+        "ROLE_CLI_WORKFLOW_ROLE_INSTRUCTIONS": str(instructions),
         "ROLE_CLI_WORKFLOW_MCP_COMMAND": str(bridge_command),
         "ROLE_CLI_WORKFLOW_MCP_CWD": str(config.bridge_root),
         "ROLE_CLI_WORKFLOW_MCP_ENABLED_TOOLS": ",".join(tools),
@@ -83,20 +106,29 @@ def _role_launch(root: str, role: str) -> int:
     else:
         os.environ.pop("ROLE_CLI_WORKFLOW_REASONING_EFFORT", None)
     if config.cli_provider == "generic":
-        args = [binary, *expand(config.cli_args), *expand(config.role_cli_args.get(role, ()))]
-        os.chdir(config.repo(role))
+        args = [binary, *expand(config.cli_args), *expand(identity_args)]
+        os.chdir(working_directory)
         os.execvpe(binary, args, os.environ)
         return 0
 
     from .bridge.security import toml_instruction_override
     enabled = "[" + ",".join(f'"{item}"' for item in tools) + "]"
-    args = [binary, *expand(config.cli_args), *expand(config.role_cli_args.get(role, ()))]
+    args = [binary, *expand(config.cli_args), *expand(identity_args)]
     if model:
         args += ["-m", model]
     if reasoning_effort:
         args += ["-c", f"model_reasoning_effort={json.dumps(reasoning_effort)}"]
-    args += ["--strict-config", "--no-alt-screen", "-c", toml_instruction_override(role)]
-    for setting in ("multi_agent", "goals", "memories", "hooks", "plugins", "apps", "remote_plugin", "skill_mcp_dependency_install"):
+    args += [
+        "--strict-config", "--no-alt-screen", "-c",
+        toml_instruction_override(identity, config.root),
+    ]
+    if identity == ESCALATION_CONTROLLER:
+        args += ["--sandbox", "workspace-write", "--ask-for-approval", "on-request"]
+    args += [
+        "-c",
+        f"features.multi_agent={'true' if identity == ESCALATION_CONTROLLER else 'false'}",
+    ]
+    for setting in ("goals", "memories", "hooks", "plugins", "apps", "remote_plugin", "skill_mcp_dependency_install"):
         args += ["-c", f"features.{setting}=false"]
     args += [
         "-c", f'mcp_servers.role-cli-workflow.command="{config.shared / "scripts" / "run_bridge_server.sh"}"',
@@ -107,12 +139,61 @@ def _role_launch(root: str, role: str) -> int:
         "-c", 'mcp_servers.role-cli-workflow.tool_timeout_sec=55.0',
         "-c", f'mcp_servers.role-cli-workflow.cwd="{config.bridge_root}"',
         "-c", f'mcp_servers.role-cli-workflow.env.ROLE_CLI_WORKFLOW_PROJECT_ROOT="{config.root}"',
-        "-c", f'mcp_servers.role-cli-workflow.env.ROLE_CLI_WORKFLOW_ROLE="{role}"',
+        "-c", f'mcp_servers.role-cli-workflow.env.ROLE_CLI_WORKFLOW_ROLE="{identity}"',
         "-c", f"mcp_servers.role-cli-workflow.enabled_tools={enabled}",
     ]
-    os.chdir(config.repo(role))
+    os.chdir(working_directory)
     os.execvpe(binary, args, os.environ)
     return 0
+
+
+def _role_launch(root: str, role: str) -> int:
+    config = load_project(root)
+    if role not in ROLES:
+        raise LifecycleError("invalid fixed role")
+    return _launch_cli(
+        config,
+        identity=role,
+        working_directory=config.repo(role),
+        repo=config.repo(role),
+        instructions=config.shared / "roles" / f"{role}.md",
+        tools=SUPERVISOR_TOOLS if role == "supervisor" else WORKER_TOOLS,
+        model=config.model_for(role),
+        reasoning_effort=config.reasoning_effort_for(role),
+        identity_args=config.role_cli_args.get(role, ()),
+    )
+
+
+def _start_escalation(root: str, intervention_id: str, reason: str) -> int:
+    config = load_project(root)
+    if not config.escalation_enabled:
+        raise LifecycleError("escalation controller is disabled")
+    active_tmux = os.environ.get("TMUX", "").split(",", 1)[0]
+    if active_tmux and Path(active_tmux).resolve() == config.socket.resolve():
+        raise LifecycleError(
+            "escalation controller must be started outside the fixed workflow tmux session"
+        )
+    store = ControlStore(config.runtime_root)
+    store.acquire(intervention_id, reason)
+    try:
+        stop_workflow(config.root)
+        if is_live(config) or role_processes_live(config):
+            raise LifecycleError("fixed workflow runtime did not stop")
+    except Exception as exc:
+        raise LifecycleError(
+            "fixed workflow runtime stop failed; escalation remains active"
+        ) from exc
+    return _launch_cli(
+        config,
+        identity=ESCALATION_CONTROLLER,
+        working_directory=config.root,
+        repo=config.root,
+        instructions=config.shared / "controllers" / f"{ESCALATION_CONTROLLER}.md",
+        tools=ESCALATION_TOOLS,
+        model=config.escalation_model_for_launch(),
+        reasoning_effort=config.escalation_reasoning_effort_for_launch(),
+        identity_args=config.escalation_cli_args,
+    )
 
 
 def _expand_arg(value: str, substitutions: dict[str, str]) -> str:
@@ -130,6 +211,18 @@ def parser() -> argparse.ArgumentParser:
         command = sub.add_parser(name); command.add_argument("project_root")
     bridge = sub.add_parser("_bridge-server"); bridge.add_argument("project_root")
     role = sub.add_parser("_role-launch"); role.add_argument("project_root"); role.add_argument("role", choices=ROLES)
+    escalation = sub.add_parser("escalation")
+    escalation_sub = escalation.add_subparsers(dest="escalation_command", required=True)
+    escalation_start = escalation_sub.add_parser("start")
+    escalation_start.add_argument("project_root")
+    escalation_start.add_argument("--intervention-id", required=True)
+    escalation_start.add_argument("--reason", required=True)
+    escalation_status = escalation_sub.add_parser("status")
+    escalation_status.add_argument("project_root")
+    escalation_release = escalation_sub.add_parser("release")
+    escalation_release.add_argument("project_root")
+    escalation_release.add_argument("--intervention-id", required=True)
+    escalation_release.add_argument("--summary", required=True)
     git_command = sub.add_parser("git")
     git_sub = git_command.add_subparsers(dest="git_command", required=True)
     git_plan = git_sub.add_parser("plan")
@@ -230,6 +323,23 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "stop": stop_workflow(args.project_root); return 0
         if args.command == "_bridge-server": return _bridge_server(args.project_root)
         if args.command == "_role-launch": return _role_launch(args.project_root, args.role)
+        if args.command == "escalation":
+            config = load_project(args.project_root)
+            if args.escalation_command == "start":
+                return _start_escalation(
+                    args.project_root, args.intervention_id, args.reason
+                )
+            store = ControlStore(config.runtime_root)
+            if args.escalation_command == "release":
+                if is_live(config) or role_processes_live(config):
+                    raise LifecycleError(
+                        "fixed workflow runtime must be stopped before escalation release"
+                    )
+                payload = store.release(args.intervention_id, args.summary).to_dict()
+            else:
+                payload = store.read().to_dict()
+            print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+            return 0
         if args.command == "git":
             store = GitTransactionStore(load_project(args.project_root))
             if args.git_command == "plan":
@@ -331,7 +441,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
             return 0
-    except (BootstrapError, LifecycleError, ProjectError, RefinementError, GitTransactionError, json.JSONDecodeError, OSError) as exc:
+    except (BootstrapError, ControlError, LifecycleError, ProjectError, RefinementError, GitTransactionError, json.JSONDecodeError, OSError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     return 2

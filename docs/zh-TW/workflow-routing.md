@@ -13,6 +13,11 @@ Supervisor 只選擇一個 execution profile。這個 profile 同時決定必要
 | `REVIEW` | 視需要 Explorer → Implementer ↔ Evaluator → Reviewer → Supervisor | 需要完整性、設計或較廣影響審查 |
 | `FULL` | 契約／探索 Gate → Implementer ↔ Evaluator → Reviewer → 條件式 Doc Curator | 有明確公開、migration、安全、不可逆或跨系統影響 |
 
+選用的 escalation controller 不屬於上述 delegated profiles。它只用於明確、
+暫時的高複雜實作或 workflow recovery；只有沒有 task 或 callback 需要處理時才
+取得控制權，直接完成工作而不派遣固定 Workers，並在 candidate 準備完成後明確
+將控制權交回 Supervisor。
+
 Evaluator 負責執行驗證與整理證據，回報 `PASS`、`FAIL` 或
 `NOT_VERIFIED`；失敗證據由 Supervisor 送回 Implementer。Reviewer 在相關
 驗證完成後，審查完整 diff、需求、設計、風險、可維護性、比例原則及證據

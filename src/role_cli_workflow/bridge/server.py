@@ -9,6 +9,9 @@ from typing import Any, Callable
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from ..config import ESCALATION_CONTROLLER
+from ..control import ControlError
+from .config import WORKER_ROLES
 from .security import ValidationError, validate_caller_role
 from .state import StateError, TaskStore
 from .tmux_client import TmuxError
@@ -20,7 +23,7 @@ LOCAL_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempot
 def _safe(call: Callable[[], dict[str, Any]]) -> dict[str, Any]:
     try:
         return {"success": True, **call()}
-    except (ValidationError, StateError, TmuxError) as exc:
+    except (ControlError, ValidationError, StateError, TmuxError) as exc:
         return {"success": False, "error": str(exc)}
     except Exception:
         return {"success": False, "error": "internal bridge error"}
@@ -38,6 +41,8 @@ def create_mcp(caller_role: str, store_factory: Callable[[str], TaskStore] = Tas
     if caller_role == "supervisor":
         @bridge.tool(annotations=READ_ONLY)
         def list_roles() -> dict[str, Any]: return _safe(get_store().list_roles)
+        @bridge.tool(annotations=READ_ONLY)
+        def get_control_state() -> dict[str, Any]: return _safe(get_store().get_control_state)
         @bridge.tool(annotations=LOCAL_WRITE)
         def assign_task(workflow_id: str, role: str, task_id: str, objective: str, deliverables: list[str], acceptance_criteria: list[str], constraints: list[str], context_refs: list[dict[str, Any]]) -> dict[str, Any]:
             return _safe(lambda: get_store().assign_task(workflow_id, role, task_id, objective, deliverables, acceptance_criteria, constraints, context_refs))
@@ -58,7 +63,20 @@ def create_mcp(caller_role: str, store_factory: Callable[[str], TaskStore] = Tas
         @bridge.tool(annotations=LOCAL_WRITE)
         def record_decision(decision_id: str, title: str, decision: str, reason: str, scope: str, affected_refs: list[str], supersedes: list[str] | None = None, replacement: str = "", authority_ref: str = "") -> dict[str, Any]:
             return _safe(lambda: get_store().record_decision(decision_id, title, decision, reason, scope, affected_refs, supersedes, replacement, authority_ref))
-    else:
+    elif caller_role == ESCALATION_CONTROLLER:
+        @bridge.tool(annotations=READ_ONLY)
+        def list_roles() -> dict[str, Any]: return _safe(get_store().list_roles)
+        @bridge.tool(annotations=READ_ONLY)
+        def get_control_state() -> dict[str, Any]: return _safe(get_store().get_control_state)
+        @bridge.tool(annotations=READ_ONLY)
+        def get_task_result(task_id: str, section: str | None = None) -> dict[str, Any]: return _safe(lambda: get_store().get_task_result(task_id, section))
+        @bridge.tool(annotations=LOCAL_WRITE)
+        def record_decision(decision_id: str, title: str, decision: str, reason: str, scope: str, affected_refs: list[str], supersedes: list[str] | None = None, replacement: str = "", authority_ref: str = "") -> dict[str, Any]:
+            return _safe(lambda: get_store().record_decision(decision_id, title, decision, reason, scope, affected_refs, supersedes, replacement, authority_ref))
+        @bridge.tool(annotations=LOCAL_WRITE)
+        def release_control(intervention_id: str, summary: str) -> dict[str, Any]:
+            return _safe(lambda: get_store().release_control(intervention_id, summary))
+    elif caller_role in WORKER_ROLES:
         @bridge.tool(annotations=LOCAL_WRITE)
         def get_current_task() -> dict[str, Any]: return _safe(get_store().get_current_task)
         @bridge.tool(annotations=LOCAL_WRITE)

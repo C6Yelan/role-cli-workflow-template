@@ -16,7 +16,14 @@ from pathlib import Path
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from .config import ROLES, WORKERS, ProjectConfig, ProjectConfigError, load_project
+from .config import (
+    ESCALATION_CONTROLLER,
+    ROLES,
+    WORKERS,
+    ProjectConfig,
+    ProjectConfigError,
+    load_project,
+)
 from .project import branch_exists, is_git_repo, worktree_map
 
 
@@ -114,13 +121,25 @@ def _role_checks(config: ProjectConfig, binary: str | None, role: str) -> list[C
 
 
 def _execpolicy(config: ProjectConfig, role: str) -> Check:
+    return _execpolicy_files(
+        config,
+        role,
+        sorted((config.repo(role) / ".codex" / "rules").glob("*.rules")),
+    )
+
+
+def _execpolicy_files(
+    config: ProjectConfig,
+    identity: str,
+    files: list[Path],
+    *,
+    expected_decision: str = "allow",
+) -> Check:
     codex = shutil.which(config.cli_command)
     if not codex:
-        return _check("FAIL", f"rules:{role}", "Codex CLI unavailable")
-    rules = config.repo(role) / ".codex" / "rules"
-    files = sorted(rules.glob("*.rules"))
+        return _check("FAIL", f"rules:{identity}", "Codex CLI unavailable")
     if len(files) != 2:
-        return _check("FAIL", f"rules:{role}", "deployed rules are incomplete")
+        return _check("FAIL", f"rules:{identity}", "deployed rules are incomplete")
     command = [codex, "execpolicy", "check"]
     for path in files:
         command.extend(["--rules", str(path)])
@@ -128,14 +147,71 @@ def _execpolicy(config: ProjectConfig, role: str) -> Check:
     try:
         result = subprocess.run(command, text=True, capture_output=True, shell=False, check=False, timeout=10)
     except subprocess.TimeoutExpired:
-        return _check("FAIL", f"rules:{role}", "execpolicy probe timed out")
+        return _check("FAIL", f"rules:{identity}", "execpolicy probe timed out")
     if result.returncode:
-        return _check("FAIL", f"rules:{role}", "deployed rules did not load")
+        return _check("FAIL", f"rules:{identity}", "deployed rules did not load")
     try:
         decision = json.loads(result.stdout).get("decision")
     except (json.JSONDecodeError, AttributeError):
         decision = None
-    return _check("PASS" if decision == "allow" else "FAIL", f"rules:{role}", f"git status => {decision}")
+    return _check(
+        "PASS" if decision == expected_decision else "FAIL",
+        f"rules:{identity}",
+        f"git status => {decision}",
+    )
+
+
+def _controller_checks(config: ProjectConfig) -> list[Check]:
+    instructions = (
+        config.shared / "controllers" / f"{ESCALATION_CONTROLLER}.md"
+    )
+    runner = config.shared / "scripts" / "run_escalation_controller.sh"
+    base = [
+        _check(
+            "PASS" if instructions.is_file() and runner.is_file() else "FAIL",
+            f"provider:{ESCALATION_CONTROLLER}",
+            "controller instructions and launcher available"
+            if instructions.is_file() and runner.is_file()
+            else "run sync",
+        )
+    ]
+    if config.cli_provider == "generic":
+        return base
+    canonical = (
+        config.bridge_root
+        / "config"
+        / "codex_controllers"
+        / ESCALATION_CONTROLLER
+        / "config.toml"
+    )
+    base.extend([
+        _check(
+            "PASS" if _trust(config.root) else "FAIL",
+            f"trust:{ESCALATION_CONTROLLER}",
+            str(config.root),
+        ),
+        _check(
+            "PASS" if canonical.is_file() else "FAIL",
+            f"config:{ESCALATION_CONTROLLER}",
+            "canonical controller config available" if canonical.is_file() else "run sync",
+        ),
+        _execpolicy_files(
+            config,
+            ESCALATION_CONTROLLER,
+            [
+                config.root
+                / ".codex"
+                / "rules"
+                / "role-cli-workflow-escalation-common.rules",
+                config.root
+                / ".codex"
+                / "rules"
+                / "role-cli-workflow-escalation-controller.rules",
+            ],
+            expected_decision="forbidden",
+        ),
+    ])
+    return base
 
 
 def run_doctor(root: str | Path, *, include_handshake: bool = True) -> list[Check]:
@@ -181,11 +257,14 @@ def run_doctor(root: str | Path, *, include_handshake: bool = True) -> list[Chec
         role_rows = list(pool.map(lambda role: _role_checks(config, binary, role), ROLES))
     for rows in role_rows:
         checks.extend(rows)
+    if config.escalation_enabled:
+        checks.extend(_controller_checks(config))
     if include_handshake:
         expected = {
             "supervisor": {
                 "list_roles", "assign_task", "cancel_task", "retry_dispatch",
                 "retry_callback", "get_task_result", "send_rework", "record_decision",
+                "get_control_state",
             },
             "worker": {"get_current_task", "get_context", "submit_result", "report_blocked"},
         }
@@ -197,6 +276,25 @@ def run_doctor(root: str | Path, *, include_handshake: bool = True) -> list[Chec
             else:
                 wanted = expected["supervisor" if role == "supervisor" else "worker"]
                 checks.append(_check("PASS" if tools == wanted else "FAIL", f"MCP:{role}", ", ".join(sorted(tools))))
+        if config.escalation_enabled:
+            try:
+                tools = asyncio.run(_handshake(config.root, ESCALATION_CONTROLLER))
+            except BaseException as exc:
+                checks.append(_check(
+                    "FAIL",
+                    f"MCP:{ESCALATION_CONTROLLER}",
+                    f"stdio handshake failed: {type(exc).__name__}",
+                ))
+            else:
+                wanted = {
+                    "list_roles", "get_control_state", "get_task_result",
+                    "record_decision", "release_control",
+                }
+                checks.append(_check(
+                    "PASS" if tools == wanted else "FAIL",
+                    f"MCP:{ESCALATION_CONTROLLER}",
+                    ", ".join(sorted(tools)),
+                ))
     if config.socket.exists():
         live = subprocess.run(["tmux", "-S", str(config.socket), "has-session", "-t", config.session], shell=False, check=False, capture_output=True).returncode == 0
         checks.append(_check("PASS" if live else "WARNING", "runtime socket", "live runtime" if live else "stale socket"))

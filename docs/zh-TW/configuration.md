@@ -30,6 +30,23 @@ reasoning_effort = "high"
 省略 `model` 或 `reasoning_effort` 時，交由所設定的 CLI 使用自身預設值。
 模板不綁定 Codex 版本，也不維護模型 allowlist。
 
+## 選用 escalation controller
+
+按需 controller 預設停用，而且不是固定 role、worktree、branch 或 tmux pane：
+
+```toml
+[cli.escalation]
+enabled = true
+# model = "your-controller-model"
+# reasoning_effort = "high"
+# args = []
+```
+
+省略 model 與 reasoning 時會沿用 `[cli]` defaults。Controller 從 project root
+啟動、直接處理既有 candidate，但沒有 Worker dispatch 或 Git publication
+authority。Generic adapter 會在 `{role}` 收到 `escalation-controller`，並且必須
+落實提供的 controller instructions、tool allowlist、sandbox 與 Git policy。
+
 ## 使用其他 AI CLI
 
 若由其他 CLI 或 provider-specific adapter 啟動角色，使用 generic provider：

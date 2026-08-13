@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 — 2026-08-13
+
+- Added an optional, disabled-by-default on-demand escalation controller for direct end-to-end work without creating a seventh role, worktree, branch, or tmux pane.
+- Added a small durable `NORMAL`/`ESCALATION` control state with explicit acquisition and release, fail-closed malformed-state handling, and rejection while a task, callback, or dispatch still needs attention.
+- Kept Worker dispatch and Git publication out of the controller tool and command policy while allowing project-root source edits and validation.
+- Preserved existing project configuration and runtime records: a missing escalation section or control-state file retains the normal six-role behavior.
+
 ## 0.2.0 — 2026-07-26
 
 - Renamed the distribution, Python module, CLI command, MCP server ID, environment variables, trigger markers, and project metadata directory to the single provider-neutral `role-cli-workflow` identity without a legacy alias.

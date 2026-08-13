@@ -7,6 +7,7 @@ import json
 import re
 import sys
 
+from ..config import ESCALATION_CONTROLLER
 from .config import PROJECT_ROOT, WORKER_ROLES
 
 TASK_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
@@ -17,7 +18,7 @@ NONCE_RE = re.compile(r"^[0-9a-f]{32}$")
 MAX_PAYLOAD_BYTES = 1024 * 1024
 LARGE_TASK_WARNING_BYTES = 64 * 1024
 MAX_BLOCKED_REASON_CHARS = 64 * 1024
-CALLER_ROLES = frozenset({"supervisor", *WORKER_ROLES})
+CALLER_ROLES = frozenset({"supervisor", ESCALATION_CONTROLLER, *WORKER_ROLES})
 
 
 class ValidationError(ValueError):
@@ -61,10 +62,12 @@ def sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def toml_instruction_override(role: str) -> str:
+def toml_instruction_override(role: str, project_root: Path | None = None) -> str:
     validate_caller_role(role)
-    role_path = PROJECT_ROOT / "shared_workspace" / "roles" / f"{role}.md"
-    project_path = PROJECT_ROOT / ".role-cli-workflow" / "project_instructions.md"
+    root = PROJECT_ROOT if project_root is None else project_root.resolve()
+    instruction_dir = "controllers" if role == ESCALATION_CONTROLLER else "roles"
+    role_path = root / "shared_workspace" / instruction_dir / f"{role}.md"
+    project_path = root / ".role-cli-workflow" / "project_instructions.md"
     try:
         content = role_path.read_text(encoding="utf-8") + "\n\n" + project_path.read_text(encoding="utf-8")
     except OSError as exc:

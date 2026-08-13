@@ -9,7 +9,8 @@ from pathlib import Path
 ROLES = ("supervisor", "explorer", "implementer", "evaluator", "reviewer", "doc-curator")
 WORKERS = ROLES[1:]
 DEFAULT_BRANCHES = {role: f"workflow/{role}" for role in WORKERS}
-TEMPLATE_VERSION = "0.2.0"
+ESCALATION_CONTROLLER = "escalation-controller"
+TEMPLATE_VERSION = "0.3.0"
 
 
 class ProjectConfigError(RuntimeError):
@@ -39,6 +40,10 @@ class ProjectConfig:
     role_models: dict[str, str]
     role_reasoning_efforts: dict[str, str]
     role_cli_args: dict[str, tuple[str, ...]]
+    escalation_enabled: bool
+    escalation_model: str | None
+    escalation_reasoning_effort: str | None
+    escalation_cli_args: tuple[str, ...]
 
     @property
     def metadata_dir(self) -> Path:
@@ -77,6 +82,12 @@ class ProjectConfig:
 
     def reasoning_effort_for(self, role: str) -> str | None:
         return self.role_reasoning_efforts.get(role, self.default_reasoning_effort)
+
+    def escalation_model_for_launch(self) -> str | None:
+        return self.escalation_model or self.default_model
+
+    def escalation_reasoning_effort_for_launch(self) -> str | None:
+        return self.escalation_reasoning_effort or self.default_reasoning_effort
 
 
 def load_project(root: str | Path) -> ProjectConfig:
@@ -122,6 +133,17 @@ def load_project(root: str | Path) -> ProjectConfig:
 
     default_model = optional_string(cli.get("model"), "cli.model")
     default_reasoning_effort = optional_string(cli.get("reasoning_effort"), "cli.reasoning_effort")
+    escalation = cli.get("escalation", {})
+    if not isinstance(escalation, dict):
+        raise ProjectConfigError("cli.escalation must be a table")
+    escalation_enabled = escalation.get("enabled", False)
+    if not isinstance(escalation_enabled, bool):
+        raise ProjectConfigError("cli.escalation.enabled must be a boolean")
+    escalation_model = optional_string(escalation.get("model"), "cli.escalation.model")
+    escalation_reasoning_effort = optional_string(
+        escalation.get("reasoning_effort"), "cli.escalation.reasoning_effort"
+    )
+    escalation_cli_args = string_list(escalation.get("args", []), "cli.escalation.args")
     role_settings = cli.get("roles", {})
     if not isinstance(role_settings, dict):
         raise ProjectConfigError("cli.roles must be a table")
@@ -165,4 +187,8 @@ def load_project(root: str | Path) -> ProjectConfig:
         role_models=role_models,
         role_reasoning_efforts=role_reasoning_efforts,
         role_cli_args=role_cli_args,
+        escalation_enabled=escalation_enabled,
+        escalation_model=escalation_model,
+        escalation_reasoning_effort=escalation_reasoning_effort,
+        escalation_cli_args=escalation_cli_args,
     )

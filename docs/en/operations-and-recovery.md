@@ -5,6 +5,36 @@ Markdown under `shared_workspace/workflow/` is a human-readable projection.
 Use `role-cli-workflow status <project-root>` before deciding that a role or
 task has failed.
 
+## On-demand escalation
+
+Enable `[cli.escalation]`, run `sync` and `doctor`, then explicitly start an
+intervention from a shell outside the fixed workflow tmux session, after
+ordinary work has reached a safe boundary:
+
+```bash
+role-cli-workflow escalation start ~/projects/NewProject \
+  --intervention-id architecture-001 \
+  --reason "Resolve a complex cross-module implementation directly"
+```
+
+Acquisition rejects running tasks, pending callbacks, and pending dispatches,
+then stops and verifies the fixed six-role runtime before launch. The
+controller does not join that tmux session or dispatch Workers. It edits and
+tests directly, cannot publish Git state, and explicitly releases control after
+all work stops:
+
+```bash
+role-cli-workflow escalation release ~/projects/NewProject \
+  --intervention-id architecture-001 \
+  --summary "Implementation and validation completed; return to Supervisor"
+```
+
+Use `escalation status` when runtime stop, controller launch, or the controller
+process fails. Those failures and an ordinary controller exit retain
+`ESCALATION`; inspect the candidate before an explicit release. Release does
+not restart the fixed workflow, so run `open` when normal work should resume.
+There is no automatic release, lease, heartbeat, expiry, or takeover.
+
 ## Common states
 
 | State | Meaning | Action |

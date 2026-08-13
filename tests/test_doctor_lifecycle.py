@@ -21,6 +21,7 @@ def fake_codex_home(tmp_path: Path, project_root: Path) -> Path:
     (home / "auth.json").write_text("{}", encoding="utf-8")
     rows = []
     config = load_project(project_root)
+    rows.append(f'[projects."{config.root}"]\ntrust_level = "trusted"\n')
     for role in ROLES:
         rows.append(f'[projects."{config.repo(role)}"]\ntrust_level = "trusted"\n')
     (home / "config.toml").write_text("\n".join(rows), encoding="utf-8")
@@ -53,7 +54,8 @@ elif len(args) == 4 and args[0] == "-C" and args[2:] == ["debug", "prompt-input"
         raise SystemExit(1)
     print(f"ROLE_CLI_WORKFLOW_CONFIG_PROBE:{{role}}")
 elif args[:2] == ["execpolicy", "check"]:
-    print(json.dumps({{"decision": "allow"}}))
+    decision = "forbidden" if any("escalation-controller" in arg for arg in args) else "allow"
+    print(json.dumps({{"decision": decision}}))
 else:
     raise SystemExit(2)
 """,
@@ -93,6 +95,7 @@ def test_real_stdio_matrix(project_root: Path) -> None:
     supervisor = {
         "list_roles", "assign_task", "cancel_task", "retry_dispatch",
         "retry_callback", "get_task_result", "send_rework", "record_decision",
+        "get_control_state",
     }
     for role, tools in matrix.items():
         assert tools == (supervisor if role == "supervisor" else worker)
@@ -116,7 +119,13 @@ def test_generic_provider_skips_codex_specific_checks(project_root: Path, monkey
     text = text.replace('provider = "codex"', 'provider = "generic"')
     text = text.replace('command = "codex"', 'command = "adapter-cli"')
     text = text.replace('login_check_args = ["login", "status"]', "login_check_args = []")
+    text = text.replace(
+        "[cli.escalation]\nenabled = false",
+        "[cli.escalation]\nenabled = true",
+    )
     path.write_text(text, encoding="utf-8")
+    from role_cli_workflow.bootstrap import sync_project
+    sync_project(project_root)
     monkeypatch.setattr("role_cli_workflow.doctor.shutil.which", lambda command: f"/usr/bin/{command}")
     monkeypatch.setattr("role_cli_workflow.doctor._version", lambda binary, *args: (0, "adapter 1.0"))
     checks = run_doctor(project_root, include_handshake=False)
@@ -124,6 +133,32 @@ def test_generic_provider_skips_codex_specific_checks(project_root: Path, monkey
     assert "CLI safety policy" in names
     assert all(not name.startswith(("trust:", "config:", "config-autoload:", "rules:")) for name in names)
     assert all(f"provider:{role}" in names for role in ROLES)
+    assert "provider:escalation-controller" in names
+
+
+def test_doctor_accepts_controller_fail_closed_git_policy(
+    project_root: Path, tmp_path: Path, monkeypatch
+) -> None:
+    init_project(project_root, assume_yes=True)
+    path = project_root / ".role-cli-workflow/project.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[cli.escalation]\nenabled = false",
+            "[cli.escalation]\nenabled = true",
+        ),
+        encoding="utf-8",
+    )
+    from role_cli_workflow.bootstrap import sync_project
+    sync_project(project_root)
+    monkeypatch.setenv("CODEX_HOME", str(fake_codex_home(tmp_path, project_root)))
+    fake_codex_cli(tmp_path, project_root, monkeypatch)
+
+    rows = {row.name: row for row in run_doctor(
+        project_root, include_handshake=False
+    )}
+
+    assert rows["rules:escalation-controller"].level == "PASS"
+    assert rows["rules:escalation-controller"].detail == "git status => forbidden"
 
 
 def test_open_refuses_doctor_fail_and_stop_preserves_history(project_root: Path, monkeypatch) -> None:

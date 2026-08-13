@@ -2,7 +2,7 @@
 
 [English](README.md) | [繁體中文](README.zh-TW.md)
 
-這是一套可重複使用的 Linux／WSL 專案模板，提供固定六角色 AI CLI 工作流：Supervisor、Explorer、Implementer、Evaluator、Reviewer 與 Doc Curator。Supervisor 是唯一面向使用者的角色。TaskStore JSON 是 runtime 真實來源；Markdown 是可確定重建、供人閱讀的投影。
+這是一套可重複使用的 Linux／WSL 專案模板，提供固定六角色 AI CLI 工作流：Supervisor、Explorer、Implementer、Evaluator、Reviewer 與 Doc Curator。Supervisor 是平常面向使用者的角色；另可選擇啟用按需 escalation controller，暫時獨占處理特別複雜的工作，但它不會成為第七個固定角色。TaskStore JSON 是 runtime 真實來源；Markdown 是可確定重建、供人閱讀的投影。
 
 Codex 是內建 provider。其他 AI CLI 工具可透過下方說明的 generic adapter contract 接入。本專案是社群專案，並非 OpenAI 官方產品。
 
@@ -69,6 +69,7 @@ uv tool install "git+https://github.com/C6Yelan/role-cli-workflow-template.git"
 ├── shared_workspace/
 │   ├── role_bridge/       canonical role maps and provider policy
 │   ├── roles/             canonical role instructions
+│   ├── controllers/       optional on-demand controller instructions
 │   ├── workflow/          human-readable projections and task documents
 │   ├── scripts/           fixed role launchers
 │   └── runtime/           TaskStore and fixed tmux socket
@@ -90,6 +91,7 @@ uv tool install "git+https://github.com/C6Yelan/role-cli-workflow-template.git"
 - `attach`：直接連接 Supervisor window。
 - `status`：顯示 runtime/task metadata 與每個固定 worktree 的唯讀 Git 摘要，不解析 panes。`DIRTY` 只是資訊；status 不會 clean 或修改 worktree。
 - `stop`：只停止固定 tmux server，並移除精確的 stale socket；保留 worktrees、tasks、results 與 reports。
+- `escalation start|status|release`：明確進入、查看或離開選用的按需 controller；不會新增 worktree 或 tmux pane。
 
 Attach 後可用滑鼠滾輪查看歷史、點擊底部 window labels 檢視角色、使用 `Ctrl+b [` 進入 copy mode、使用 `q` 或 `Esc` 離開 copy mode、使用 `Ctrl+b d` detach。Active task 期間避免在自動化 Worker composer 中手動輸入。
 
@@ -112,9 +114,17 @@ model = "your-supervisor-model"
 [cli.roles.implementer]
 model = "your-implementation-model"
 reasoning_effort = "high"
+
+[cli.escalation]
+enabled = false
+# model = "your-controller-model"
+# reasoning_effort = "high"
+# args = []
 ```
 
 此例中，沒有 override 的角色使用 `your-default-model`；Supervisor 與 Implementer 使用自己的 model。相同設定也適用 generic provider。
+
+`[cli.escalation]` 是選用設定，預設為 disabled；既有 project file 完全沒有這個 table 時也維持 disabled。啟用後，controller 在沒有 override 時沿用 CLI defaults。它從 project root 啟動並直接修改既有 candidate，但不會加入 `ROLES`、worktrees、branches 或固定 tmux session。
 
 ### 其他 CLI providers
 
@@ -140,7 +150,7 @@ version_args = ["--version"]
 login_check_args = []
 ```
 
-Supported placeholders 是 `{project_root}`、`{repo}`、`{role}`、`{model}`、`{reasoning_effort}`、`{role_instructions}`、`{bridge_command}`、`{bridge_cwd}` 與 `{enabled_tools}`。相同 values 會輸出為 `ROLE_CLI_WORKFLOW_PROJECT_ROOT`、`ROLE_CLI_WORKFLOW_REPO`、`ROLE_CLI_WORKFLOW_ROLE`、`ROLE_CLI_WORKFLOW_MODEL`、`ROLE_CLI_WORKFLOW_REASONING_EFFORT`、`ROLE_CLI_WORKFLOW_ROLE_INSTRUCTIONS`、`ROLE_CLI_WORKFLOW_MCP_COMMAND`、`ROLE_CLI_WORKFLOW_MCP_CWD` 與 `ROLE_CLI_WORKFLOW_MCP_ENABLED_TOOLS`。沒有設定 model 或 reasoning effort 時，相關 variables 不會出現；在缺少設定時使用對應 placeholder 會發生錯誤。
+Supported placeholders 是 `{project_root}`、`{repo}`、`{role}`、`{model}`、`{reasoning_effort}`、`{role_instructions}`、`{bridge_command}`、`{bridge_cwd}` 與 `{enabled_tools}`。固定角色的 `{repo}` 是該角色 worktree；escalation controller 的 `{repo}` 則是 project root。相同 values 會輸出為 `ROLE_CLI_WORKFLOW_PROJECT_ROOT`、`ROLE_CLI_WORKFLOW_REPO`、`ROLE_CLI_WORKFLOW_ROLE`、`ROLE_CLI_WORKFLOW_MODEL`、`ROLE_CLI_WORKFLOW_REASONING_EFFORT`、`ROLE_CLI_WORKFLOW_ROLE_INSTRUCTIONS`、`ROLE_CLI_WORKFLOW_MCP_COMMAND`、`ROLE_CLI_WORKFLOW_MCP_CWD` 與 `ROLE_CLI_WORKFLOW_MCP_ENABLED_TOOLS`。沒有設定 model 或 reasoning effort 時，相關 variables 不會出現；在缺少設定時使用對應 placeholder 會發生錯誤。
 
 Adapter 必須載入 role instructions、註冊提供的 stdio MCP server、將 tools 限制為指定的 role matrix，並落實預期的 sandbox、approval、trust、authentication 與 Git policy。這些控制與 provider 有關，無法從一組通用 command line 安全推導。範例請見 `examples/generic/project.toml`。
 
@@ -158,6 +168,7 @@ Adapter 必須載入 role instructions、註冊提供的 stdio MCP server、將 
 | Explorer | read-only / never | read、fetch、pull `--ff-only`；禁止 publication 與 merge |
 | Evaluator | workspace-write / never | read、fetch、pull `--ff-only`；writable output 僅供 validation artifacts，不供 Git publication |
 | Reviewer | read-only / never | read、fetch、pull `--ff-only`；禁止 publication 與 merge |
+| Escalation Controller（選用） | project-root workspace-write / on-request | 禁止直接使用 Git CLI 與 fixed Git executor；以唯讀 filesystem tools 檢視檔案 |
 
 所有 role instructions 都禁止 destructive reset/clean、force push、forced branch/worktree deletion、repository-wide overwrite 與 shell command-string wrappers。Codex 會收到 generated execpolicy rules。Generic providers 必須在自己的 adapter 或 CLI configuration 落實等價邊界。Rules 是 command boundary，不能取代使用者審查。
 
@@ -179,6 +190,8 @@ Task state 在 tmux wakeup 失敗時仍會持久保存。`WAKEUP_PENDING` 表示
 Long-running child commands 必須保留相同 live session 或 cell ID，直到觀察到 explicit exit code。Intermediate output 不代表完成；原 session 未解決時不得啟動第二個 writer 或 retry。
 
 `shared_workspace/runtime` 下的 runtime JSON 是 source of truth。`shared_workspace/workflow/current_task.md`、task reports、indexes、handoffs 與 decision log 只是 projections。
+
+選用 controller 使用簡單且持久化的 `NORMAL`／`ESCALATION` control state。`start` 必須從固定 workflow tmux session 外執行；只有沒有 running task、pending callback 或 pending dispatch 需要處理時才會成功，接著停止並確認六角色 runtime 已結束，再啟動 controller。Controller 直接完成工作，不派遣 Workers；所有修改與測試停止後，必須使用相同 intervention ID 明確 release。Stop、launch 或 controller exit 失敗都會保留 `ESCALATION`；不會自動 release，也不使用 lease、heartbeat、自動 expiry 或 takeover recovery。Explicit release 不會重新啟動六角色 runtime；要恢復日常工作時再執行 `open`。
 
 Delegated workflow 可建立 `tasks/<workflow-id>/data/preflight.json` 及簡短的 `preflight.md` projection。`VERIFY` 是預設 delegated profile。`FULL` 必須記錄 public、migration、cross-system、irreversible、security/provider、SHA-locked release 或 regulatory reason 與 trigger。它只 freeze 可追溯的 `required_now` invariants 與 Completion Gate；optional hardening 和 deferred ideas 保持 advisory。
 
