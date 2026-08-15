@@ -4,21 +4,24 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sys
+from pathlib import Path
 
-from ..config import ESCALATION_CONTROLLER
-from .config import PROJECT_ROOT, WORKER_ROLES
+from ..config import WORKERS
+
+WORKER_ROLES = frozenset(WORKERS)
 
 TASK_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 WORKFLOW_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 DECISION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
-REF_ID_RE = re.compile(r"^(task:[A-Za-z0-9][A-Za-z0-9_-]{0,63}|decision:[A-Za-z0-9][A-Za-z0-9_.-]{0,63}|(?:preflight|contract|candidate|authority):[A-Za-z0-9][A-Za-z0-9_.-]{0,63})$")
+REF_ID_RE = re.compile(r"^(?:task:[A-Za-z0-9][A-Za-z0-9_-]{0,63}|decision:[A-Za-z0-9][A-Za-z0-9_.-]{0,63})$")
 NONCE_RE = re.compile(r"^[0-9a-f]{32}$")
 MAX_PAYLOAD_BYTES = 1024 * 1024
 LARGE_TASK_WARNING_BYTES = 64 * 1024
 MAX_BLOCKED_REASON_CHARS = 64 * 1024
-CALLER_ROLES = frozenset({"supervisor", ESCALATION_CONTROLLER, *WORKER_ROLES})
+CALLER_ROLES = frozenset({"supervisor", *WORKER_ROLES})
 
 
 class ValidationError(ValueError):
@@ -64,9 +67,14 @@ def sha256_text(value: str) -> str:
 
 def toml_instruction_override(role: str, project_root: Path | None = None) -> str:
     validate_caller_role(role)
-    root = PROJECT_ROOT if project_root is None else project_root.resolve()
-    instruction_dir = "controllers" if role == ESCALATION_CONTROLLER else "roles"
-    role_path = root / "shared_workspace" / instruction_dir / f"{role}.md"
+    if project_root is None:
+        raw = os.environ.get("ROLE_CLI_WORKFLOW_PROJECT_ROOT", "")
+        if not raw:
+            raise ValidationError("project root environment is missing")
+        root = Path(raw).expanduser().resolve()
+    else:
+        root = project_root.resolve()
+    role_path = root / "shared_workspace" / "roles" / f"{role}.md"
     project_path = root / ".role-cli-workflow" / "project_instructions.md"
     try:
         content = role_path.read_text(encoding="utf-8") + "\n\n" + project_path.read_text(encoding="utf-8")

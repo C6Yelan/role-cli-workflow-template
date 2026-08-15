@@ -10,7 +10,6 @@ from pathlib import Path
 
 from .bootstrap import sync_project
 from .config import ROLES, ProjectConfig, load_project
-from .control import ControlError, ControlStore
 from .doctor import print_checks, run_doctor
 from .project import git
 
@@ -64,12 +63,6 @@ def role_processes_live(config: ProjectConfig) -> bool:
 
 def open_workflow(root: str | Path) -> None:
     config = load_project(root)
-    try:
-        control = ControlStore(config.runtime_root).read()
-    except ControlError as exc:
-        raise LifecycleError("control state is invalid; normal workflow was not started") from exc
-    if control.mode != "NORMAL":
-        raise LifecycleError("workflow escalation is active; normal workflow was not started")
     sync_project(config.root)
     checks = run_doctor(config.root)
     if print_checks(checks):
@@ -149,43 +142,12 @@ def _worktree_git_status(config: ProjectConfig, role: str) -> dict[str, object]:
     }
 
 
-def _legacy_authority_workflows(config: ProjectConfig) -> list[str]:
-    workflows: set[str] = set()
-    tasks = config.runtime_root / "tasks"
-    for path in sorted(tasks.glob("*/contract.json")) if tasks.is_dir() else []:
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        authority = payload.get("effective_authority") if isinstance(payload, dict) else None
-        workflow_id = payload.get("workflow_id") if isinstance(payload, dict) else None
-        if (
-            isinstance(authority, dict)
-            and authority.get("status") == "LEGACY_AUTHORITY_WARNING"
-            and isinstance(workflow_id, str)
-        ):
-            workflows.add(workflow_id)
-    return sorted(workflows)
-
-
 def status_workflow(root: str | Path) -> int:
     config = load_project(root)
     print(f"Runtime: {'RUNNING' if is_live(config) else 'STOPPED'}")
-    control_invalid = False
-    try:
-        control = ControlStore(config.runtime_root).read()
-        detail = f"{control.mode} (owner: {control.owner})"
-        if control.intervention_id:
-            detail += f", intervention: {control.intervention_id}"
-        print(f"Control: {detail}")
-    except ControlError:
-        control_invalid = True
-        print("Control: INVALID (management mutations fail closed)")
-    metadata = config.runtime_root / "metadata"
+    metadata = config.runtime_root / "taskstore-v2" / "tasks"
     rows = []
-    for path in sorted(metadata.glob("*.json")) if metadata.is_dir() else []:
-        if path.name == "active-tasks.json":
-            continue
+    for path in sorted(metadata.glob("*/task.json")) if metadata.is_dir() else []:
         try:
             row = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -198,8 +160,8 @@ def status_workflow(root: str | Path) -> int:
         row = latest[role]
         print(
             f"{role:13} {str(row.get('task_id', '-')):21} "
-            f"{row.get('execution_status', 'IDLE'):14} "
-            f"{row.get('callback_status', 'NONE'):10} {row.get('error_code', '') or '-'}"
+            f"{row.get('status', 'IDLE'):14} "
+            f"{row.get('result_notice_status', 'NONE'):10} {row.get('warning', '') or '-'}"
         )
     print()
     print("Git worktrees (read-only; DIRTY is informational)")
@@ -210,10 +172,7 @@ def status_workflow(root: str | Path) -> int:
             f"{row['role']:13} {row['repo']:13} {row['branch']:25} "
             f"{row['head']:8} {row['state']:8} {str(row['modified']):8} {row['untracked']}"
         )
-    legacy = _legacy_authority_workflows(config)
-    if legacy:
-        print()
-        print("Warnings")
-        for workflow_id in legacy:
-            print(f"LEGACY_AUTHORITY_WARNING workflow:{workflow_id}")
-    return int(control_invalid)
+    legacy = config.runtime_root / "tasks"
+    if legacy.exists():
+        print("WARNING legacy runtime history is present and ignored by TaskStore v2")
+    return 0

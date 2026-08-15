@@ -1,35 +1,12 @@
-"""Typed metadata for fixed Project role tasks."""
+"""Durable records for the minimal TaskStore."""
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from typing import Literal
 
-TaskStatus = Literal["RUNNING", "RESULT_READY", "BLOCKED", "FAILED", "CANCELLED"]
-CallbackStatus = Literal["NONE", "PENDING", "DELIVERED"]
-ExecutionStatus = Literal[
-    "IDLE", "DISPATCHED", "STARTED", "RUNNING", "RESULT_READY", "BLOCKED", "REWORK_REQUIRED"
-]
-
-
-def _execution_status(data: dict[str, object]) -> str:
-    value = str(data.get("execution_status", ""))
-    if value == "WORKER_UNAVAILABLE":
-        if str(data.get("status", "")) != "RUNNING":
-            return "IDLE"
-        return {
-            "GET_CURRENT_TASK": "STARTED",
-            "GET_CONTEXT": "RUNNING",
-        }.get(str(data.get("last_activity_kind", "")), "DISPATCHED")
-    if value:
-        return value
-    return {
-        "RUNNING": "DISPATCHED",
-        "RESULT_READY": "RESULT_READY",
-        "BLOCKED": "BLOCKED",
-        "FAILED": "IDLE",
-        "CANCELLED": "IDLE",
-    }.get(str(data.get("status", "")), "IDLE")
+TaskStatus = Literal["DISPATCHED", "RUNNING", "RESULT_READY", "BLOCKED", "ACCEPTED", "CANCELLED"]
+NoticeStatus = Literal["NONE", "PENDING", "DELIVERED"]
 
 
 @dataclass(frozen=True)
@@ -42,61 +19,51 @@ class RoleConfig:
 
 @dataclass
 class TaskRecord:
+    schema_version: int
     workflow_id: str
     task_id: str
     role: str
-    nonce: str
     round: int
-    rework_count: int
+    nonce: str
+    status: TaskStatus
+    task_contract_hash: str
+    input_candidate_sha: str
+    produced_candidate_sha: str
+    result_hash: str
+    dispatch_notice_status: NoticeStatus
+    result_notice_status: NoticeStatus
     created_at: str
     updated_at: str
-    status: TaskStatus
-    pane_id: str
-    contract_length: int
-    contract_sha256: str
-    result_length: int = 0
-    result_sha256: str = ""
-    blocked_reason: str = ""
-    error_code: str = ""
-    document_warning: str = ""
-    callback_status: CallbackStatus = "NONE"
-    execution_status: ExecutionStatus = "DISPATCHED"
-    dispatched_at: str = ""
     started_at: str = ""
-    last_activity_at: str = ""
-    last_activity_kind: str = ""
     completed_at: str = ""
-    event_kind: str = "INITIAL_IMPLEMENTATION"
+    blocked_reason: str = ""
+    warning: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> "TaskRecord":
+        if int(data.get("schema_version", 0)) != 2:
+            raise ValueError("legacy task metadata is historical and is not an active TaskStore record")
         return cls(
-            workflow_id=str(data.get("workflow_id", "legacy")),
+            schema_version=2,
+            workflow_id=str(data["workflow_id"]),
             task_id=str(data["task_id"]),
             role=str(data["role"]),
-            nonce=str(data["nonce"]),
             round=int(data["round"]),
-            rework_count=int(data["rework_count"]),
+            nonce=str(data["nonce"]),
+            status=str(data["status"]),  # type: ignore[arg-type]
+            task_contract_hash=str(data["task_contract_hash"]),
+            input_candidate_sha=str(data.get("input_candidate_sha", "")),
+            produced_candidate_sha=str(data.get("produced_candidate_sha", "")),
+            result_hash=str(data.get("result_hash", "")),
+            dispatch_notice_status=str(data.get("dispatch_notice_status", "NONE")),  # type: ignore[arg-type]
+            result_notice_status=str(data.get("result_notice_status", "NONE")),  # type: ignore[arg-type]
             created_at=str(data["created_at"]),
             updated_at=str(data["updated_at"]),
-            status=str(data["status"]),  # type: ignore[arg-type]
-            pane_id=str(data["pane_id"]),
-            contract_length=int(data.get("contract_length", data.get("prompt_length", 0))),
-            contract_sha256=str(data.get("contract_sha256", data.get("prompt_sha256", ""))),
-            result_length=int(data.get("result_length", 0)),
-            result_sha256=str(data.get("result_sha256", "")),
-            blocked_reason=str(data.get("blocked_reason", "")),
-            error_code=str(data.get("error_code", "")),
-            document_warning=str(data.get("document_warning", "")),
-            callback_status=str(data.get("callback_status", "NONE")),  # type: ignore[arg-type]
-            execution_status=_execution_status(data),  # type: ignore[arg-type]
-            dispatched_at=str(data.get("dispatched_at", data.get("created_at", ""))),
             started_at=str(data.get("started_at", "")),
-            last_activity_at=str(data.get("last_activity_at", "")),
-            last_activity_kind=str(data.get("last_activity_kind", "")),
             completed_at=str(data.get("completed_at", "")),
-            event_kind=str(data.get("event_kind", "INITIAL_IMPLEMENTATION")),
+            blocked_reason=str(data.get("blocked_reason", "")),
+            warning=str(data.get("warning", "")),
         )

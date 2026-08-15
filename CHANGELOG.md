@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 — 2026-08-15
+
+- Reduced routing to `DIRECT`, `VERIFY`, and `REVIEW`, keeping conditional Explorer, Reviewer, and Doc Curator.
+- Replaced refinement, authority, contract-freeze, semantic-repair, candidate-freeze, metrics, and escalation-control state with TaskStore v2.
+- Made Git commit SHA the candidate identity and added exact detached Evaluator/Reviewer handoff.
+- Limited Git transactions to exact protected integration; ordinary Implementer feature commits are local and un-gated.
+- Made pane/runtime/callback/projection failures retryable transport conditions.
+- Added ref-level multi-context authorization and retained strict identity, private/secret, candidate, writer, and Git safety gates.
+
 ## 0.3.0 — 2026-08-13
 
 - Added an optional, disabled-by-default on-demand escalation controller for direct end-to-end work without creating a seventh role, worktree, branch, or tmux pane.
