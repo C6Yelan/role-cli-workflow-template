@@ -21,21 +21,15 @@ login_check_args = ["login", "status"]
 # reasoning_effort = "medium"
 # args = []
 
-# Optional on-demand controller. It is not a fixed role, worktree, or tmux pane.
-[cli.escalation]
-enabled = false
-# model = "your-model"
-# reasoning_effort = "high"
-# args = []
-
 [git]
-base_branch = "development"
+base_branch = "dev"
 role_branch_prefix = "workflow/"
 feature_branch_pattern = "feature/*"
-protected_branches = ["development", "main"]
+protected_branches = ["dev", "main"]
+integration_mode = "approved_transaction"
 
 [paths]
-private = [".env", ".env.*", "private_docs/", "secrets/", "credentials/", "*.pem", "*.key"]
+private = [".env", ".env.*", "docs_local/", "private_docs/", "secrets/", "credentials/", "*.pem", "*.key", "*.crt", "*.cer"]
 
 [commands]
 test = ""

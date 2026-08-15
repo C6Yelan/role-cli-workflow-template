@@ -1,233 +1,79 @@
-# Role CLI Workflow Template
+# Role CLI Workflow
 
-[English](README.md) | [繁體中文](README.zh-TW.md)
+A small Linux/WSL template for six ordinary roles: Supervisor, Explorer, Implementer, Evaluator, Reviewer, and Doc Curator. TaskStore JSON is runtime truth. Markdown is a best-effort projection; tmux panes, wakeups, and callbacks are transport only.
 
-A reusable Linux/WSL project template for one fixed six-role AI CLI workflow: Supervisor, Explorer, Implementer, Evaluator, Reviewer, and Doc Curator. Supervisor is the normal user-facing role. An optional on-demand escalation controller can temporarily take exclusive workflow control for unusually complex work without becoming a seventh fixed role. TaskStore JSON is runtime truth; Markdown is a deterministic human-readable projection.
+## Routing
 
-Codex has a built-in provider. Other AI CLI tools can be connected through the generic adapter contract described below. This is a community project and is not an official OpenAI product.
+- `DIRECT`: Supervisor only, for read-only, workflow infrastructure, documentation/metadata, or trivial reversible non-behavioral work.
+- `VERIFY`: Implementer → Evaluator → Supervisor. This is the normal delegated product-development path.
+- `REVIEW`: optional Explorer → Implementer → Evaluator → Reviewer → Supervisor.
+- Doc Curator is inserted only when documentation is a real deliverable or maintained public/configuration/runbook material changed.
 
-## Documentation
+There is no high-risk profile. `REVIEW` supplies additional engineering review; the genuinely irreversible or external action still requires an exact action-level approval.
 
-- [English documentation](docs/en/README.md)
-- [Traditional Chinese documentation](docs/zh-TW/README.md)
+## Candidate handoff
 
-## Language behavior
+On writer assignment the bridge verifies the input SHA is the current configured base and makes that exact object available from the local Supervisor repo without switching or cleaning writer files. Implementer creates `feature/<task>` from it, commits locally, and reports the full Git SHA. The bridge validates branch, expected base ancestry, exact HEAD, clean handoff, configured private paths, and high-confidence secret material. Evaluator and Reviewer use clean isolated worktrees detached at that exact SHA. New commits naturally make old evidence stale.
 
-Runtime templates and canonical role instructions are written in English. Human-readable Supervisor replies follow an explicit language request in the current user message first, then an explicit output-language instruction in `.role-cli-workflow/project_instructions.md`, then the language of the user's latest message, with English as the fallback. Supervisor writes the human-readable Task Contract fields in that selected language so Workers can use the same language without reading the original conversation.
+No candidate-freeze file or per-file commit transaction exists. Local candidate add/commit needs no user approval.
 
-Workers follow an explicitly requested language in the Task Contract, otherwise the language of its `objective`, with English as the fallback. A Doc Curator documentation target language takes precedence when specified. Code, commands, CLI options, paths, Git refs, identifiers, schema and Result Envelope keys, verdicts, status codes, event kinds, error codes, raw logs, raw diagnostics, and verbatim text remain in English or their original form. `[WORKFLOW_STATUS]` uses English canonical field labels while its human-readable values may follow the selected language.
+## Durable task model
 
-This is an instruction-level policy. There is no CLI language option, locale setting, translation service, or language field in project configuration, TaskStore, preflight metadata, or Result Envelopes.
-
-## Requirements
-
-- Linux or WSL
-- Python 3.12, `uv`, Git, and tmux
-- An installed and authenticated AI CLI with MCP support, either through the built-in Codex provider or a custom adapter
-
-## Install and start
-
-```bash
-uv tool install /path/to/role-cli-workflow-template
-
-mkdir -p ~/projects/NewProject
-git clone <repo-url> ~/projects/NewProject/main
-
-role-cli-workflow init ~/projects/NewProject
-role-cli-workflow doctor ~/projects/NewProject
-role-cli-workflow open ~/projects/NewProject
-role-cli-workflow attach ~/projects/NewProject
-```
-
-It can also be installed directly from GitHub with `uv tool install "git+https://github.com/C6Yelan/role-cli-workflow-template.git"`.
-
-`init` displays the base branch, five role branches, worktree destinations, and main working-tree cleanliness before asking for `yes`. It never overwrites `main`, commits, pushes, resets, or cleans. For noninteractive isolated tests only, `init --yes` accepts the displayed local worktree creation.
-
-## Standard layout
+New records live under `shared_workspace/runtime/taskstore-v2/` and contain only task identity, immutable contract hash, input/produced SHA, result hash, notice state, lifecycle state, and timestamps. Lifecycle values are:
 
 ```text
-<project-root>/
-├── main/                  existing Git repository; Supervisor cwd
-├── explorer/              linked worktree
-├── implementer/           linked worktree
-├── evaluator/             linked worktree
-├── reviewer/              linked worktree
-├── doc-curator/           linked worktree
-├── shared_workspace/
-│   ├── role_bridge/       canonical role maps and provider policy
-│   ├── roles/             canonical role instructions
-│   ├── controllers/       optional on-demand controller instructions
-│   ├── workflow/          human-readable projections and task documents
-│   ├── scripts/           fixed role launchers
-│   └── runtime/           TaskStore and fixed tmux socket
-└── .role-cli-workflow/
-    ├── project.toml
-    ├── project_instructions.md
-    └── VERSION
+DISPATCHED → RUNNING → RESULT_READY → ACCEPTED
+                       ↘ BLOCKED
+Any non-terminal task may be CANCELLED.
 ```
 
-The default role branches are `workflow/<role>`. To override one, add (for example) `implementer_branch = "feature/backend"` under `[git]`, then run `sync` and `doctor`. Existing branches are never reset or silently remapped.
+Focused rework keeps the same immutable contract and task ID, with a new round and nonce. A material objective or acceptance change creates a new task. Context authorization is ref-level and accepts multiple `task:*` and `decision:*` refs; `summary` and `full` are views, not separate authority.
+
+Legacy authority, contract-freeze, semantic-repair, candidate-freeze, control-state, and old task metadata may remain as history. New TaskStore records never parse them as gates.
+
+## Recovery and safety
+
+Pane recreation, runtime restart, wake failure, callback failure, stale Markdown, uncertain telemetry, and unavailable optional host integration do not invalidate tasks. Retry dispatch/callback using the same task identity; regenerate projections when convenient.
+
+Hard rejection remains for wrong workflow/task/role/round/nonce, overlapping writers, wrong or stale candidate SHA, dirty validation worktrees, private paths, high-confidence secrets, destructive or force Git, unauthorized protected-branch writes, non-fast-forward publication, exact integration drift, and missing user approval.
+
+## Git policy
+
+Projects configure:
+
+```toml
+[git]
+base_branch = "dev"
+feature_branch_pattern = "feature/*"
+protected_branches = ["dev", "main"]
+integration_mode = "approved_transaction"
+```
+
+Workers never merge or push protected branches. Protected integration uses a compact exact plan with source branch/SHA, target branch/starting SHA, remote/ref, merge method, operations, and `force_allowed = false`. One explicit approval naming that plan covers its displayed ordered operations. Any material drift invalidates approval.
 
 ## Commands
 
-- `init`: inspect `main`, confirm and create five linked worktrees, then install the project instance. Does not start the configured CLI.
-- `sync`: deterministically redeploy canonical role instructions, configs, rules, and fixed launchers. Runtime and workflow history are preserved.
-- `doctor`: report PASS/WARNING/FAIL for layout, worktrees, configured CLI, optional login probe, tmux, uv, Python, role deployment, provider-specific policy checks, and six real stdio MCP handshakes.
-- `open`: sync, require a doctor result without FAIL, then create the fixed six-window tmux server.
-- `verify`: verify the live fixed panes without reading TUI content or running a product task.
-- `attach`: attach directly to the Supervisor window.
-- `status`: display runtime/task metadata and a read-only Git summary for every fixed worktree without parsing panes. `DIRTY` is informational; status never cleans or changes a worktree.
-- `stop`: stop only the fixed tmux server and remove an exact stale socket. Worktrees, tasks, results, and reports remain.
-- `escalation start|status|release`: explicitly enter, inspect, or leave the optional on-demand controller. It never creates another worktree or tmux pane.
-
-After `attach`, use the mouse wheel for history, click the bottom window labels to inspect roles, `Ctrl+b [` for copy mode, `q` or `Esc` to leave copy mode, and `Ctrl+b d` to detach. Avoid typing in automated Worker composers while a task is active.
-
-## Configuration
-
-`.role-cli-workflow/project.toml` contains project identity, CLI provider settings, optional per-role launch overrides, base/branch policy, private paths, and optional `test`, `lint`, `build`, and `format` commands. Empty commands produce doctor warnings; init never guesses or runs package scripts. The workflow does not pin or require one Codex version.
-
-Model and reasoning settings use one provider-neutral surface. Values under `[cli]` are defaults for every role; `[cli.roles.<role>]` overrides only that role. When a field is omitted at both levels, the launcher leaves the choice to the configured CLI. Values are passed through without a template-side allowlist, so model availability remains the responsibility of the installed CLI and account:
-
-```toml
-[cli]
-provider = "codex"
-command = "codex"
-model = "your-default-model"
-reasoning_effort = "medium"
-
-[cli.roles.supervisor]
-model = "your-supervisor-model"
-
-[cli.roles.implementer]
-model = "your-implementation-model"
-reasoning_effort = "high"
-
-[cli.escalation]
-enabled = false
-# model = "your-controller-model"
-# reasoning_effort = "high"
-# args = []
+```bash
+role-cli-workflow init ~/projects/MyProject --yes
+role-cli-workflow sync ~/projects/MyProject
+role-cli-workflow doctor ~/projects/MyProject
+role-cli-workflow open ~/projects/MyProject
+role-cli-workflow verify ~/projects/MyProject
+role-cli-workflow status ~/projects/MyProject
+role-cli-workflow stop ~/projects/MyProject
+role-cli-workflow route VERIFY
 ```
 
-In this example, roles without an override use `your-default-model`; Supervisor and Implementer use their role-specific models. The same configuration works with the generic provider.
-
-`[cli.escalation]` is optional and defaults to disabled, including for existing project files that do not contain the table. When enabled, the controller inherits the CLI defaults unless its model, reasoning effort, or arguments are overridden. It starts from the project root and edits the existing candidate directly, but it is not added to `ROLES`, worktrees, branches, or the fixed tmux session.
-
-### Other CLI providers
-
-Set `provider = "generic"` and point `command` at the CLI or a small provider-specific adapter:
-
-```toml
-[cli]
-provider = "generic"
-command = "my-cli-workflow-adapter"
-model = "your-default-model"
-reasoning_effort = "medium"
-args = [
-  "--role", "{role}",
-  "--repo", "{repo}",
-  "--model", "{model}",
-  "--reasoning-effort", "{reasoning_effort}",
-  "--instructions", "{role_instructions}",
-  "--mcp-command", "{bridge_command}",
-  "--mcp-cwd", "{bridge_cwd}",
-  "--enabled-tools", "{enabled_tools}",
-]
-version_args = ["--version"]
-login_check_args = []
-```
-
-Supported placeholders are `{project_root}`, `{repo}`, `{role}`, `{model}`, `{reasoning_effort}`, `{role_instructions}`, `{bridge_command}`, `{bridge_cwd}`, and `{enabled_tools}`. For fixed roles, `{repo}` is that role's worktree; for the escalation controller it is the project root. The same values are exported as `ROLE_CLI_WORKFLOW_PROJECT_ROOT`, `ROLE_CLI_WORKFLOW_REPO`, `ROLE_CLI_WORKFLOW_ROLE`, `ROLE_CLI_WORKFLOW_MODEL`, `ROLE_CLI_WORKFLOW_REASONING_EFFORT`, `ROLE_CLI_WORKFLOW_ROLE_INSTRUCTIONS`, `ROLE_CLI_WORKFLOW_MCP_COMMAND`, `ROLE_CLI_WORKFLOW_MCP_CWD`, and `ROLE_CLI_WORKFLOW_MCP_ENABLED_TOOLS`. Model-related variables are omitted when no model or reasoning effort is configured; using their placeholders without a configured value is an error.
-
-The adapter must load the role instructions, register the supplied stdio MCP server, restrict tools to the supplied role matrix, and implement the intended sandbox, approval, trust, authentication, and Git policy. Those controls are provider-specific and cannot be inferred safely from one universal command line. See `examples/generic/project.toml`.
-
-`.role-cli-workflow/project_instructions.md` contains conservative project-specific candidates and TODOs. Fixed Git, MCP, safety, role, and result rules remain canonical in `shared_workspace/roles` and `shared_workspace/role_bridge/config`.
-
-With the Codex provider, each worktree receives a local `.codex/config.toml` and `.codex/rules/` deployment. `sync` adds `.codex/` to Git's local `info/exclude`; it does not change product `.gitignore`, `CODEX_HOME`, global Codex config/rules, authentication, history, sessions, or logs. Generic providers receive no guessed provider-local configuration.
-
-## Roles and Git authority
-
-| Role | Intended sandbox / approval | Git authority |
-| --- | --- | --- |
-| Supervisor | workspace-write over project root / on-request | read, fetch, pull `--ff-only`; direct writes prompt; an exact approved transaction may combine task-branch add/commit/push or integration merge/resulting push once; only role allowed to merge |
-| Implementer | workspace-write / never | add, commit, push own task branch; protected push and merge forbidden |
-| Doc Curator | workspace-write / never | add, commit, push approved docs branch; protected push and merge forbidden |
-| Explorer | read-only / never | read, fetch, pull `--ff-only`; publication and merge forbidden |
-| Evaluator | workspace-write / never | read, fetch, pull `--ff-only`; writable output is for validation artifacts, not Git publication |
-| Reviewer | read-only / never | read, fetch, pull `--ff-only`; publication and merge forbidden |
-| Escalation Controller (optional) | project-root workspace-write / on-request | Direct Git CLI use and the fixed Git executor are forbidden; inspect files through read-only filesystem tools |
-
-All role instructions forbid destructive reset/clean, force push, forced branch/worktree deletion, repository-wide overwrite, and shell command-string wrappers. Codex receives generated execpolicy rules. Generic providers must enforce equivalent boundaries in their adapter or CLI configuration. Rules are a command boundary, not a substitute for user review.
-
-## Workflow data
-
-Task Contracts contain the current objective, deliverables, acceptance criteria, task-only constraints, and authorized context refs. Workers pull tasks and context through MCP and return structured Result Envelopes. Supervisor selects one execution profile: `DIRECT` uses no Worker, `VERIFY` uses Implementer and Evaluator, `REVIEW` adds Reviewer after validation evidence, and `FULL` adds frozen-contract gates for justified high-impact work. Explorer and Doc Curator are conditional. BLOCKED tasks resume through `send_rework` with the same task ID and a new round/nonce. Full upstream results are not inserted into downstream prompts.
-
-Evaluator executes relevant checks and returns `PASS`, `FAIL`, or `NOT_VERIFIED` evidence. A failure loops through Supervisor back to Implementer. Reviewer then evaluates the complete diff, requirements, design, risk, maintainability, proportionality, and the sufficiency of Evaluator evidence; Reviewer does not normally repeat the full test suite. Result Envelope validation requires these Evaluator verdicts and Reviewer correctness/proportionality verdicts. Reviewer and Evaluator do not issue competing parallel final verdicts.
-
-Task state is durable even when a tmux wakeup fails. `WAKEUP_PENDING` means Supervisor should use `retry_dispatch`, not create a duplicate task. A running task that the user has explicitly abandoned can be released with `cancel_task`, after which a replacement receives a new task ID. Result and BLOCKED callbacks identify their exact workflow, task, role, and status and remain `PENDING` until delivered; Supervisor can use `retry_callback` and must read a BLOCKED result with `get_task_result` before explaining the blocker and required next action to the user.
-
-Long-running child commands keep their exact live session or cell ID until an explicit exit code is observed. Intermediate output is not completion, and a second writer or retry must not start while the original session remains unresolved.
-
-Runtime JSON under `shared_workspace/runtime` is the source of truth. `shared_workspace/workflow/current_task.md`, task reports, indexes, handoffs, and decision log are projections only.
-
-The optional controller uses a small durable `NORMAL`/`ESCALATION` control state. Run `start` from outside the fixed workflow tmux session. It succeeds only when no running task, pending callback, or pending dispatch needs attention, then stops and verifies the six-role runtime before launching the controller. The controller works directly instead of dispatching Workers and must explicitly release the matching intervention ID after all edits and tests stop. Stop, launch, or controller-exit failures leave `ESCALATION` active; there is no automatic release, lease, heartbeat, expiry, or takeover recovery. Explicit release does not restart the six-role runtime; run `open` when normal work should resume.
-
-Each delegated workflow may add `tasks/<workflow-id>/data/preflight.json` plus a short `preflight.md` projection. `VERIFY` is the default delegated profile. `FULL` requires a stated public, migration, cross-system, irreversible, security/provider, SHA-locked release, or regulatory reason and trigger. It freezes only traceable `required_now` invariants and their Completion Gate; optional hardening and deferred ideas remain advisory. Reviewer reports separate correctness and cumulative proportionality verdicts. Fixed workflow CLI commands record that assessment, assess a semantic repair, and resolve a required/advisory/deferred classification. For `FULL`, `send_rework` requires the current `invariant_type` and a current resolved checkpoint after the first semantic repair; successful dispatch records its event and metric automatically. Other profiles do not use that checkpoint. Pre-0.2 preflight profile values are normalized only when read so existing Gates remain active; removed CLI options are not restored. Effective PLAN, contract and approved decision revisions are projected once; superseded wording remains historical-only. Event metadata still separates semantic revisions from mechanical, permission/context, stale-SHA, verification and Git-approval events without changing task round or nonce.
-
-## Approved Git transactions
-
-Direct Supervisor Git writes keep their existing per-command prompts. Open-ended requests such as "finish all Git operations" are not approval. To request one approval for an exact add/commit/push subset, create a read-only plan and show it to the user:
+Protected integration:
 
 ```bash
-role-cli-workflow git plan ~/projects/NewProject tx-001 \
-  --workflow-id wf-001 --task-id task-001 --repo-id main \
-  --operation add --operation commit --operation push \
-  --file path/to/file.py --commit-message "Implement approved task"
+role-cli-workflow git plan-integration ~/projects/MyProject tx-123 \
+  --workflow-id wf-123 --task-id task-123 \
+  --source-branch feature/example --target-branch dev \
+  --remote origin --destination-ref refs/heads/dev --merge-method ff-only --push
+role-cli-workflow git approve ~/projects/MyProject tx-123 \
+  --approval-summary "approve exact tx-123"
+role-cli-workflow git execute ~/projects/MyProject tx-123
 ```
 
-After the user explicitly approves that displayed transaction, Supervisor records the approval and executes the fixed command:
-
-```bash
-role-cli-workflow git approve ~/projects/NewProject tx-001 \
-  --approval-summary "User explicitly approved the displayed tx-001 plan"
-role-cli-workflow git execute ~/projects/NewProject tx-001
-```
-
-An integration plan may instead include one exact merge and its resulting push:
-
-```bash
-role-cli-workflow git plan ~/projects/NewProject tx-integration-001 \
-  --workflow-id wf-001 --task-id task-001 --repo-id main \
-  --operation merge --operation push \
-  --source-branch feature/approved-change --target-branch main \
-  --merge-method ff-only --remote origin \
-  --destination-ref refs/heads/main
-```
-
-The generated plan records the source branch/SHA, target branch/starting SHA, merge method, remote identity, destination ref, clean-worktree expectation, no-force rule, and stop conditions. One explicit approval naming `tx-integration-001` covers the displayed `merge → push` sequence, so no second push approval is requested after that merge.
-
-The executor accepts no arbitrary repo path, shell command or extra Git argument. Before each write it revalidates the approved branch, SHA, worktree, remote/ref and fast-forward safety. Scope drift, conflict, unapproved resolution or modification, changed merge method, force/non-fast-forward requirement, or any operation outside the plan invalidates approval. A transient push failure preserves partial state and may retry only the same push while the exact approved conditions remain unchanged. Tags, rebase, cherry-pick, deletion, cleanup and force remain outside these transactions.
-
-Status output treats pane/process telemetry (`ALIVE`, `DOWN`, `UNKNOWN`), task execution, and latest MCP activity as independent facts. Normal callbacks use a compact workflow block; full role tables are reserved for explicit status requests, multiple active validation/review tasks, blocked/unavailable roles, telemetry anomalies, partial Git failures and final acceptance.
-
-## Codex trust and troubleshooting
-
-Every fixed worktree must be trusted in the active global Codex configuration before `open`. `doctor` stops with FAIL and prints the affected paths when trust is missing. Open each fixed repository with Codex and approve project trust using the normal Codex prompt, then rerun:
-
-```bash
-role-cli-workflow sync ~/projects/NewProject
-role-cli-workflow doctor ~/projects/NewProject
-```
-
-Codex versions are not pinned or compared. Rerun doctor and the compatibility checks after upgrades. A stale exact socket is reported and safely replaced by `open` only when no fixed live session exists. `stop` is idempotent.
-
-For a generic provider, `doctor` validates the configured executable, optional version/login probes, role launchers, and MCP handshakes. It emits a warning because provider-specific sandbox, approval, trust, and Git enforcement cannot be verified generically.
-
-## Remove the workflow but keep main
-
-First run `stop`. Preserve any role commits you need, then manually remove the five linked worktrees with normal Git worktree commands. Finally remove `shared_workspace/` and `.role-cli-workflow/`. The template never automates this destructive removal and never deletes `main`.
-
-## License
-
-MIT. See `LICENSE`.
+`init` expects the canonical Git repository at `main/` and creates isolated role worktrees without resetting existing work. `sync` preserves runtime history. Configure private paths and project commands in `.role-cli-workflow/project.toml` before use.

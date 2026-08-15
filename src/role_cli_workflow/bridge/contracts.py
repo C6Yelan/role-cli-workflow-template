@@ -1,4 +1,4 @@
-"""Loose structural validation for task and result payloads."""
+"""Task Contract and result validation without authority projections."""
 
 from __future__ import annotations
 
@@ -18,14 +18,11 @@ from .security import (
 )
 
 SUGGESTED_ROLE_SECTIONS = {
-    "explorer": ("requirements", "scope", "api_contract", "acceptance_criteria", "risks"),
+    "explorer": ("requirements", "scope", "acceptance_criteria", "risks"),
     "implementer": ("changes", "tests", "deviations", "remaining_work"),
     "evaluator": ("validation_verdict", "test_evidence", "failures", "coverage_gaps"),
-    "reviewer": (
-        "review_mode", "correctness_verdict", "proportionality_verdict",
-        "findings", "required_fixes", "risks",
-    ),
-    "doc-curator": ("final_summary", "decisions", "validation_summary", "open_items", "artifact_index"),
+    "reviewer": ("correctness_verdict", "proportionality_verdict", "findings", "risks"),
+    "doc-curator": ("documentation_changes", "validation_summary", "open_items"),
 }
 
 
@@ -46,26 +43,12 @@ def _string_list(value: Any, field: str) -> list[str]:
     return value
 
 
-def ref_type(ref_id: str) -> str:
-    return ref_id.split(":", 1)[0]
-
-
-def validate_context_refs(value: Any) -> list[dict[str, object]]:
-    if not isinstance(value, list):
-        raise ValidationError("context_refs must be a list")
-    refs: list[dict[str, object]] = []
-    seen: set[str] = set()
-    for ref in value:
-        if not isinstance(ref, dict) or set(ref) != {"ref_id", "label", "allowed_sections"}:
-            raise ValidationError("context ref schema is invalid")
-        ref_id = validate_ref_id(ref.get("ref_id"))  # type: ignore[arg-type]
-        label = validate_text(ref.get("label"), field="label", maximum=MAX_PAYLOAD_BYTES)  # type: ignore[arg-type]
-        sections = _string_list(ref.get("allowed_sections"), "allowed_sections")
-        if not sections or ref_id in seen or len(sections) != len(set(sections)):
-            raise ValidationError("context ref schema is invalid")
-        seen.add(ref_id)
-        refs.append({"ref_id": ref_id, "label": label, "allowed_sections": sections})
-    return refs
+def validate_authorized_refs(value: Any) -> list[str]:
+    refs = _string_list(value, "authorized_refs")
+    validated = [validate_ref_id(item) for item in refs]
+    if len(validated) != len(set(validated)):
+        raise ValidationError("authorized_refs must be unique")
+    return validated
 
 
 def build_task_contract(
@@ -76,38 +59,41 @@ def build_task_contract(
     deliverables: Any,
     acceptance_criteria: Any,
     constraints: Any,
-    context_refs: Any,
+    authorized_refs: Any,
+    input_candidate_sha: str = "",
 ) -> tuple[dict[str, object], list[str]]:
+    if input_candidate_sha and (
+        len(input_candidate_sha) < 40
+        or any(character not in "0123456789abcdef" for character in input_candidate_sha.lower())
+    ):
+        raise ValidationError("input_candidate_sha must be a full Git commit SHA")
+    validated_role = validate_worker_role(role)
+    if validated_role in {"implementer", "evaluator", "reviewer", "doc-curator"} and not input_candidate_sha:
+        raise ValidationError("writer and validator tasks require input_candidate_sha")
     contract = {
+        "schema_version": 2,
         "workflow_id": validate_workflow_id(workflow_id),
         "task_id": validate_task_id(task_id),
-        "role": validate_worker_role(role),
+        "role": validated_role,
         "objective": validate_text(objective, field="objective", maximum=MAX_PAYLOAD_BYTES),
         "deliverables": _string_list(deliverables, "deliverables"),
         "acceptance_criteria": _string_list(acceptance_criteria, "acceptance_criteria"),
         "constraints": _string_list(constraints, "constraints"),
-        "context_refs": validate_context_refs(context_refs),
+        "authorized_refs": validate_authorized_refs(authorized_refs),
+        "input_candidate_sha": input_candidate_sha.lower(),
     }
     size = json_size(contract)
     if size > MAX_PAYLOAD_BYTES:
         raise ValidationError("task contract exceeds the technical payload limit")
-    warnings = ["TASK_CONTRACT_LARGE"] if size > LARGE_TASK_WARNING_BYTES else []
-    return contract, warnings
+    return contract, (["TASK_CONTRACT_LARGE"] if size > LARGE_TASK_WARNING_BYTES else [])
 
 
-def validate_source_refs(value: Any, authorized: dict[str, set[str]]) -> list[dict[str, str]]:
-    if not isinstance(value, list):
-        raise ValidationError("source_refs must be a list")
-    refs: list[dict[str, str]] = []
-    for ref in value:
-        if not isinstance(ref, dict) or set(ref) != {"ref_id", "section"}:
-            raise ValidationError("source ref schema is invalid")
-        ref_id = validate_ref_id(ref.get("ref_id"))  # type: ignore[arg-type]
-        section = validate_text(ref.get("section"), field="section", maximum=MAX_PAYLOAD_BYTES)  # type: ignore[arg-type]
-        if section not in authorized.get(ref_id, set()):
-            raise ValidationError("source ref is not authorized by the active task")
-        refs.append({"ref_id": ref_id, "section": section})
-    return refs
+def validate_source_refs(value: Any, authorized_refs: set[str]) -> list[str]:
+    refs = _string_list(value, "source_refs")
+    validated = [validate_ref_id(item) for item in refs]
+    if any(item not in authorized_refs for item in validated):
+        raise ValidationError("source ref is not authorized by the active task")
+    return validated
 
 
 def validate_result_envelope(
@@ -122,7 +108,9 @@ def validate_result_envelope(
     evidence: Any,
     sections: Any,
     source_refs: Any,
-    authorized_refs: dict[str, set[str]],
+    authorized_refs: set[str],
+    input_candidate_sha: str,
+    produced_candidate_sha: str,
 ) -> dict[str, object]:
     if not isinstance(round_number, int) or not 0 <= round_number <= 100:
         raise ValidationError("round is invalid")
@@ -131,26 +119,32 @@ def validate_result_envelope(
     if not isinstance(sections, dict) or any(not isinstance(key, str) for key in sections):
         raise ValidationError("sections must be a named object")
     validated_role = validate_worker_role(role)
-    if validated_role == "evaluator":
-        verdict = sections.get("validation_verdict")
-        if not isinstance(verdict, str) or verdict not in {"PASS", "FAIL", "NOT_VERIFIED"}:
-            raise ValidationError("evaluator validation_verdict is invalid")
+    if validated_role == "evaluator" and sections.get("validation_verdict") not in {"PASS", "FAIL", "NOT_VERIFIED"}:
+        raise ValidationError("evaluator validation_verdict is invalid")
     if validated_role == "reviewer":
-        correctness = sections.get("correctness_verdict")
-        proportionality = sections.get("proportionality_verdict")
-        if not isinstance(correctness, str) or correctness not in {"PASS", "FAIL"}:
+        if sections.get("correctness_verdict") not in {"PASS", "FAIL"}:
             raise ValidationError("reviewer correctness_verdict is invalid")
-        if (
-            not isinstance(proportionality, str)
-            or proportionality not in {"PROPORTIONATE", "OVERDESIGNED", "UNCERTAIN"}
-        ):
+        if sections.get("proportionality_verdict") not in {"PROPORTIONATE", "OVERDESIGNED", "UNCERTAIN"}:
             raise ValidationError("reviewer proportionality_verdict is invalid")
+    if validated_role in {"implementer", "doc-curator"} and not produced_candidate_sha:
+        raise ValidationError("writer result requires produced_candidate_sha")
+    bound_sha = input_candidate_sha.lower()
+    if validated_role in {"evaluator", "reviewer"} and produced_candidate_sha.lower() != bound_sha:
+        raise ValidationError("result evidence is for the wrong candidate SHA")
+    if produced_candidate_sha and (
+        len(produced_candidate_sha) < 40
+        or any(character not in "0123456789abcdef" for character in produced_candidate_sha.lower())
+    ):
+        raise ValidationError("produced_candidate_sha must be a full Git commit SHA")
     envelope = {
+        "schema_version": 2,
         "workflow_id": validate_workflow_id(workflow_id),
         "task_id": validate_task_id(task_id),
         "role": validated_role,
         "round": round_number,
         "nonce": validate_nonce(nonce),
+        "input_candidate_sha": bound_sha,
+        "produced_candidate_sha": produced_candidate_sha.lower(),
         "summary": validate_text(summary, field="summary", maximum=MAX_PAYLOAD_BYTES),
         "decisions": decisions,
         "open_issues": open_issues,
@@ -163,10 +157,13 @@ def validate_result_envelope(
     return envelope
 
 
-def result_section(envelope: dict[str, object], section: str) -> object:
-    if section in {"summary", "decisions", "open_issues", "evidence", "source_refs"}:
-        return envelope[section]
-    sections = envelope.get("sections")
-    if not isinstance(sections, dict) or section not in sections:
-        raise ValidationError("result section is unavailable")
-    return sections[section]
+def result_view(envelope: dict[str, object], view: str) -> object:
+    if view == "summary":
+        return {
+            "summary": envelope["summary"],
+            "produced_candidate_sha": envelope.get("produced_candidate_sha", ""),
+            "sections": envelope.get("sections", {}),
+        }
+    if view == "full":
+        return envelope
+    raise ValidationError("view must be summary or full")

@@ -1,90 +1,16 @@
-# 設定說明
+# 設定
 
-專案設定位於 `.role-cli-workflow/project.toml`。修改後執行：
-
-```bash
-role-cli-workflow sync ~/projects/NewProject
-role-cli-workflow doctor ~/projects/NewProject
-```
-
-## 模型設定
-
-預設模型與 reasoning effort 採 provider-neutral 設定；個別角色區段可覆寫
-共同預設值：
+`.role-cli-workflow/project.toml` 包含 provider、Git policy、private paths 與 project commands。Git 設定刻意保持精簡：
 
 ```toml
-[cli]
-provider = "codex"
-command = "codex"
-model = "your-default-model"
-reasoning_effort = "medium"
-
-[cli.roles.supervisor]
-model = "your-supervisor-model"
-
-[cli.roles.implementer]
-model = "your-implementation-model"
-reasoning_effort = "high"
+[git]
+base_branch = "dev"
+role_branch_prefix = "workflow/"
+feature_branch_pattern = "feature/*"
+protected_branches = ["dev", "main"]
+integration_mode = "approved_transaction"
 ```
 
-省略 `model` 或 `reasoning_effort` 時，交由所設定的 CLI 使用自身預設值。
-模板不綁定 Codex 版本，也不維護模型 allowlist。
+Implementer product candidate 必須符合 `feature_branch_pattern`。Workers 不得寫 protected branches。Supervisor exact approved transaction 可將 feature 整合至 base，再將 base 整合至 `main`。
 
-## 選用 escalation controller
-
-按需 controller 預設停用，而且不是固定 role、worktree、branch 或 tmux pane：
-
-```toml
-[cli.escalation]
-enabled = true
-# model = "your-controller-model"
-# reasoning_effort = "high"
-# args = []
-```
-
-省略 model 與 reasoning 時會沿用 `[cli]` defaults。Controller 從 project root
-啟動、直接處理既有 candidate，但沒有 Worker dispatch 或 Git publication
-authority。Generic adapter 會在 `{role}` 收到 `escalation-controller`，並且必須
-落實提供的 controller instructions、tool allowlist、sandbox 與 Git policy。
-
-## 使用其他 AI CLI
-
-若由其他 CLI 或 provider-specific adapter 啟動角色，使用 generic provider：
-
-```toml
-[cli]
-provider = "generic"
-command = "my-cli-workflow-adapter"
-model = "your-default-model"
-reasoning_effort = "medium"
-args = [
-  "--role", "{role}",
-  "--repo", "{repo}",
-  "--model", "{model}",
-  "--instructions", "{role_instructions}",
-  "--mcp-command", "{bridge_command}",
-  "--mcp-cwd", "{bridge_cwd}",
-  "--enabled-tools", "{enabled_tools}",
-]
-version_args = ["--version"]
-login_check_args = []
-```
-
-adapter 必須載入指定的角色指令、註冊 stdio MCP server、限制角色可用工具，
-並落實該 provider 的 sandbox、approval、trust、authentication 與 Git policy。
-
-完整範例：
-
-- [Codex 設定](../../examples/codex/project.toml)
-- [Generic provider 設定](../../examples/generic/project.toml)
-
-## 專案指令與私有路徑
-
-`[commands]` 可設定 `test`、`lint`、`build` 與 `format`。允許保留空值，
-`doctor` 會提出警告；模板不會自行猜測指令。
-
-`[paths].private` 用來標示不得進入核准式 Git transaction 的檔案。機密資料
-應保留於已忽略的本機檔案，且不得將 credentials 寫入 `project.toml`。
-
-上一篇：[快速開始](getting-started.md) ·
-下一篇：[操作與異常恢復](operations-and-recovery.md)
+在 `[paths].private` 列出所有 private roots 與 secret file patterns。Built-in candidate check 也會拒絕 `.env`、`docs_local/`、key/certificate formats。高信心 secret value 會被拒絕且不印出；`token` 等普通 identifier 不會因此被擋。

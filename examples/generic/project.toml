@@ -28,21 +28,15 @@ login_check_args = []
 # reasoning_effort = "high"
 # args = []
 
-# Optional on-demand controller. The adapter receives role=escalation-controller.
-[cli.escalation]
-enabled = false
-# model = "your-controller-model"
-# reasoning_effort = "high"
-# args = []
-
 [git]
-base_branch = "development"
+base_branch = "dev"
 role_branch_prefix = "workflow/"
 feature_branch_pattern = "feature/*"
-protected_branches = ["development", "main"]
+protected_branches = ["dev", "main"]
+integration_mode = "approved_transaction"
 
 [paths]
-private = [".env", ".env.*", "private_docs/", "secrets/", "credentials/", "*.pem", "*.key"]
+private = [".env", ".env.*", "docs_local/", "private_docs/", "secrets/", "credentials/", "*.pem", "*.key", "*.crt", "*.cer"]
 
 [commands]
 test = ""

@@ -29,6 +29,10 @@ PROJECT_ROOT = _project_root()
 BRIDGE_ROOT = PROJECT_ROOT / "shared_workspace" / "role_bridge"
 CONFIG_PATH = BRIDGE_ROOT / "config" / "roles.toml"
 RUNTIME_ROOT = PROJECT_ROOT / "shared_workspace" / "runtime"
+TASKS_DIR = RUNTIME_ROOT / "taskstore-v2" / "tasks"
+METADATA_DIR = RUNTIME_ROOT / "taskstore-v2" / "metadata"
+DECISIONS_DIR = RUNTIME_ROOT / "taskstore-v2" / "decisions"
+LOG_DIR = RUNTIME_ROOT / "taskstore-v2" / "logs"
 WORKFLOW_ROOT = PROJECT_ROOT / "shared_workspace" / "workflow"
 TMUX_SOCKET = RUNTIME_ROOT / "tmux.sock"
 ROLE_REPOS = {role: PROJECT_ROOT / ("main" if role == "supervisor" else role) for role in ROLES}
@@ -62,7 +66,6 @@ def load_roles() -> dict[str, RoleConfig]:
 def ensure_runtime_permissions() -> None:
     RUNTIME_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(RUNTIME_ROOT, 0o700)
-    for name in ("tasks", "metadata", "decisions", "logs"):
-        path = RUNTIME_ROOT / name
-        path.mkdir(mode=0o700, exist_ok=True)
+    for path in (TASKS_DIR, METADATA_DIR, DECISIONS_DIR, LOG_DIR):
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(path, 0o700)

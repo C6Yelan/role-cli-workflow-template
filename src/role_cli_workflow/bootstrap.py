@@ -11,14 +11,12 @@ import tempfile
 from pathlib import Path
 
 from .config import (
-    ESCALATION_CONTROLLER,
     ROLES,
     TEMPLATE_VERSION,
     WORKERS,
     ProjectConfig,
     load_project,
 )
-from .control import ControlError, ControlStore
 from .project import ProjectError, detect_repo, ensure_worktree, git
 
 
@@ -90,20 +88,15 @@ login_check_args = ["login", "status"]
 # reasoning_effort = "medium"
 # args = []
 
-[cli.escalation]
-enabled = false
-# model = "your-model"
-# reasoning_effort = "high"
-# args = []
-
 [git]
 base_branch = {_toml_string(base)}
 role_branch_prefix = "workflow/"
 feature_branch_pattern = "feature/*"
 protected_branches = [{protected_text}]
+integration_mode = "approved_transaction"
 
 [paths]
-private = [".env", ".env.*", "private_docs/", "secrets/", "credentials/", "*.pem", "*.key"]
+private = [".env", ".env.*", "docs_local/", "private_docs/", "secrets/", "credentials/", "*.pem", "*.key", "*.crt", "*.cer", "*.p12", "*.pfx"]
 
 [commands]
 test = ""
@@ -151,7 +144,7 @@ def _project_instructions(main: Path, base: str) -> tuple[str, list[str]]:
 - Feature branch rule: `feature/*`
 - Test command: TODO
 - Build command: TODO
-- Private paths: `.env`, `.env.*`, `private_docs/`, `secrets/`, `credentials/`, `*.pem`, `*.key`
+- Private paths: `.env`, `.env.*`, `docs_local/`, `private_docs/`, `secrets/`, `credentials/`, key and certificate files
 - Project-specific approval rules: TODO
 
 Only confirmed project-specific facts belong here. Fixed role, Git, MCP, and safety rules live in canonical role instructions and Codex rules.
@@ -210,33 +203,11 @@ def _role_rules(config: ProjectConfig, role: str) -> str:
 prefix_rule(pattern = ["git", "branch", "--show-current"], decision = "allow")
 prefix_rule(pattern = ["git", "pull", "--ff-only"], decision = "allow")
 '''
-    if role == ESCALATION_CONTROLLER:
-        repos = ", ".join(_toml_string(str(config.repo(item))) for item in ROLES)
-        mutations = (
-            '"add", "am", "apply", "bisect", "branch", "checkout", "cherry-pick", '
-            '"clean", "clone", "commit", "config", "fetch", "init", "maintenance", '
-            '"merge", "mv", "notes", "pull", "push", "rebase", "reflog", "remote", '
-            '"replace", "reset", "restore", "revert", "rm", "sparse-checkout", "stash", '
-            '"submodule", "switch", "tag", "update-index", "update-ref", "worktree"'
-        )
-        return f'''# Escalation-controller Git CLI commands fail closed.
-prefix_rule(pattern = ["git"], decision = "forbidden")
-prefix_rule(pattern = ["git", [{mutations}]], decision = "forbidden")
-fixed_repos = [{repos}]
-prefix_rule(pattern = ["git", "-C", fixed_repos, [{mutations}]], decision = "forbidden")
-prefix_rule(pattern = [["/usr/bin/git", "/bin/git"]], decision = "forbidden")
-prefix_rule(pattern = [["env", "/usr/bin/env", "/bin/env"]], decision = "forbidden")
-prefix_rule(pattern = ["role-cli-workflow", "git"], decision = "forbidden")
-prefix_rule(pattern = ["role-cli-workflow", "workflow"], decision = "forbidden")
-prefix_rule(pattern = ["role-cli-workflow", "escalation", ["status", "release"]], decision = "allow")
-prefix_rule(pattern = ["role-cli-workflow", "escalation", "start"], decision = "forbidden")
-'''
     if role == "supervisor":
         body = read + '''prefix_rule(pattern = ["git", "worktree", "list"], decision = "allow")
 prefix_rule(pattern = ["git", ["add", "commit", "merge", "push"]], decision = "prompt", justification = "Supervisor Git integration requires explicit user approval for this stage.")
 prefix_rule(pattern = ["git", ["rebase", "cherry-pick", "tag"]], decision = "prompt")
 prefix_rule(pattern = ["role-cli-workflow", "git", ["plan", "approve", "execute", "show"]], decision = "allow", justification = "Fixed executor requires a matching approved transaction and accepts no arbitrary command or repo path.")
-prefix_rule(pattern = ["role-cli-workflow", "workflow", ["preflight", "freeze-contract", "approve-contract-change", "freeze-sha"]], decision = "allow")
 '''
         repos = ", ".join(_toml_string(str(config.repo(item))) for item in ROLES)
         body += f'''fixed_repos = [{repos}]
@@ -253,7 +224,9 @@ prefix_rule(pattern = ["role-cli-workflow", "workflow"], decision = "forbidden")
         for branch in config.protected_branches:
             body += f'prefix_rule(pattern = ["git", "push", "origin", {_toml_string(branch)}], decision = "forbidden")\n'
         return body
-    return read + '''prefix_rule(pattern = ["git", ["add", "commit", "push", "merge", "rebase", "cherry-pick", "tag"]], decision = "forbidden")
+    validation_switch = '''prefix_rule(pattern = ["git", "switch", "--detach"], decision = "allow")
+''' if role in {"evaluator", "reviewer"} else ""
+    return read + validation_switch + '''prefix_rule(pattern = ["git", ["add", "commit", "push", "merge", "rebase", "cherry-pick", "tag"]], decision = "forbidden")
 prefix_rule(pattern = ["role-cli-workflow", "git", ["plan", "approve", "execute"]], decision = "forbidden")
 prefix_rule(pattern = ["role-cli-workflow", "workflow"], decision = "forbidden")
 prefix_rule(pattern = ["git", "branch", ["-d", "-D", "--delete"]], decision = "forbidden")
@@ -262,11 +235,11 @@ prefix_rule(pattern = ["git", "remote", ["add", "remove", "set-url", "rename"]],
 
 
 def _role_config(config: ProjectConfig, role: str) -> str:
-    sandbox = "workspace-write" if role in {"supervisor", ESCALATION_CONTROLLER, "implementer", "evaluator", "doc-curator"} else "read-only"
-    approval = "on-request" if role in {"supervisor", ESCALATION_CONTROLLER} else "never"
-    multi_agent = "true" if role == ESCALATION_CONTROLLER else "false"
+    sandbox = "workspace-write" if role in {"supervisor", "implementer", "evaluator", "doc-curator"} else "read-only"
+    approval = "on-request" if role == "supervisor" else "never"
+    multi_agent = "false"
     text = f'developer_instructions = "ROLE_CLI_WORKFLOW_CONFIG_PROBE:{role}"\nsandbox_mode = "{sandbox}"\napproval_policy = "{approval}"\n\n[features]\nmulti_agent = {multi_agent}\nmemories = false\n\n[sandbox_workspace_write]\nnetwork_access = true\n'
-    if role in {"supervisor", ESCALATION_CONTROLLER}:
+    if role == "supervisor":
         text += f'writable_roots = [{_toml_string(str(config.root))}]\n'
     return text
 
@@ -301,60 +274,6 @@ def _deploy_codex(config: ProjectConfig, role: str) -> None:
     _atomic_text(deployed / "rules" / "workflow-role.rules", _role_rules(config, role))
 
 
-def _deploy_codex_controller(config: ProjectConfig) -> None:
-    canonical = (
-        config.bridge_root / "config" / "codex_controllers" / ESCALATION_CONTROLLER
-    )
-    _atomic_text(canonical / "config.toml", _role_config(config, ESCALATION_CONTROLLER))
-    _atomic_text(canonical / "rules" / "workflow-common.rules", _common_rules())
-    _atomic_text(
-        canonical / "rules" / "workflow-controller.rules",
-        _role_rules(config, ESCALATION_CONTROLLER),
-    )
-    local_rules = config.root / ".codex" / "rules"
-    _atomic_text(
-        local_rules / "role-cli-workflow-escalation-common.rules", _common_rules()
-    )
-    _atomic_text(
-        local_rules / "role-cli-workflow-escalation-controller.rules",
-        _role_rules(config, ESCALATION_CONTROLLER),
-    )
-
-
-def _remove_generated_controller(config: ProjectConfig) -> None:
-    generated = (
-        config.shared / "controllers" / f"{ESCALATION_CONTROLLER}.md",
-        config.shared / "scripts" / "run_escalation_controller.sh",
-        config.root / ".codex" / "rules" / "role-cli-workflow-escalation-common.rules",
-        config.root
-        / ".codex"
-        / "rules"
-        / "role-cli-workflow-escalation-controller.rules",
-        config.bridge_root
-        / "config"
-        / "codex_controllers"
-        / ESCALATION_CONTROLLER
-        / "config.toml",
-        config.bridge_root
-        / "config"
-        / "codex_controllers"
-        / ESCALATION_CONTROLLER
-        / "rules"
-        / "workflow-common.rules",
-        config.bridge_root
-        / "config"
-        / "codex_controllers"
-        / ESCALATION_CONTROLLER
-        / "rules"
-        / "workflow-controller.rules",
-    )
-    for path in generated:
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            pass
-
-
 def _role_script(config: ProjectConfig, role: str) -> str:
     return "#!/usr/bin/env bash\nset -euo pipefail\nexec " + " ".join(
         shlex.quote(item) for item in (sys.executable, "-m", "role_cli_workflow.cli", "_role-launch", str(config.root), role)
@@ -367,21 +286,6 @@ def _server_script(config: ProjectConfig) -> str:
         + "export ROLE_CLI_WORKFLOW_PROJECT_ROOT=" + shlex.quote(str(config.root)) + "\n"
         + "exec " + " ".join(shlex.quote(item) for item in (sys.executable, "-m", "role_cli_workflow.bridge.server")) + "\n"
     )
-
-
-def _controller_script(config: ProjectConfig) -> str:
-    command = " ".join(
-        shlex.quote(item)
-        for item in (
-            sys.executable,
-            "-m",
-            "role_cli_workflow.cli",
-            "escalation",
-            "start",
-            str(config.root),
-        )
-    )
-    return "#!/usr/bin/env bash\nset -euo pipefail\nexec " + command + ' "$@"\n'
 
 
 def sync_project(root: str | Path) -> list[str]:
@@ -404,32 +308,6 @@ def sync_project(root: str | Path) -> list[str]:
         _atomic_text(config.shared / "roles" / f"{role}.md", source)
         script = config.shared / "scripts" / f"run_{role.replace('-', '_')}.sh"
         _atomic_text(script, _role_script(config, role), 0o700)
-    if config.escalation_enabled:
-        controller_dir = config.shared / "controllers"
-        controller_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if config.cli_provider == "codex":
-            _deploy_codex_controller(config)
-        _atomic_text(
-            controller_dir / f"{ESCALATION_CONTROLLER}.md",
-            _template_controller(),
-        )
-        _atomic_text(
-            config.shared / "scripts" / "run_escalation_controller.sh",
-            _controller_script(config),
-            0o700,
-        )
-    else:
-        try:
-            control = ControlStore(config.runtime_root).read()
-        except ControlError as exc:
-            raise BootstrapError(
-                "control state is invalid; controller assets were not changed"
-            ) from exc
-        if control.mode == "ESCALATION":
-            raise BootstrapError(
-                "workflow escalation is active; controller assets were not changed"
-            )
-        _remove_generated_controller(config)
     _atomic_text(config.shared / "scripts" / "run_bridge_server.sh", _server_script(config), 0o700)
     for name, text in {
         "current_task.md": _template_text("workflow/current_task.md"),
@@ -449,9 +327,3 @@ def _template_role(role: str) -> str:
     role_text = _template_text(f"roles/{role}.md").rstrip()
     long_command = _template_text("roles/long-command-protocol.md").strip()
     return f"{role_text}\n\n{long_command}\n"
-
-
-def _template_controller() -> str:
-    controller = _template_text("controllers/escalation-controller.md").rstrip()
-    long_command = _template_text("roles/long-command-protocol.md").strip()
-    return f"{controller}\n\n{long_command}\n"

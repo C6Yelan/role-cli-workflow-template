@@ -7,7 +7,7 @@
 - [工作流路由](workflow-routing.md)
 - [操作與異常恢復](operations-and-recovery.md)
 
-完整角色權限、`FULL` 工作流 Gate 及核准式 Git transaction 語法，請參閱
+完整角色權限、Git-SHA handoff、recovery 與 protected integration 語法，請參閱
 [專案 README](../../README.md)。
 
 [English documentation](../en/README.md)
